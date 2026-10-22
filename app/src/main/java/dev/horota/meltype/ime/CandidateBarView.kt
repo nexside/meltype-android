@@ -14,7 +14,7 @@ import dev.horota.meltype.core.CompositionView
 /**
  * 1 行の候補バー (Q25 の 720×720 の画面でも邪魔にならない高さ)。左端に英 / 日の状態、右に候補。
  * 候補をタップすると onSelect(index)。入力中は右端に「カナ」「英数」を出し、タップすると onConvert。
- * 何も入力していないときは隠す (高さ 0)。出すのは、入力中・「あ」/「A」を切り替えた直後の短い間・警告があるときだけ。
+ * 何も入力していないときは隠す (高さ 0)。出すのは、入力中・警告があるとき・(カーソルの位置が分からないときの)「あ」/「A」の切り替え直後だけ。
  */
 class CandidateBarView(
     context: Context,
@@ -31,6 +31,11 @@ class CandidateBarView(
         minimumHeight = dp(36)
         visibility = GONE
     }
+    /**
+     * 「あ」/「A」を切り替えたとき、入力カーソルの横に出す先 (サービスが設定する)。出せたら true。
+     * false (カーソルの位置が分からない入力欄など) のときは、バーを短く出して見せる。
+     */
+    var modeFlash: ((String) -> Boolean)? = null
     private var composing = false
     private var flashing = false
     private val endFlash = Runnable {
@@ -102,7 +107,7 @@ class CandidateBarView(
         // 切り替えたときだけ、短く見せる (入力欄を移っただけのときや最初は見せない)
         val changed = modeLabel.text.isNotEmpty() && modeLabel.text.toString() != newText
         modeLabel.text = newText
-        if (changed) {
+        if (changed && modeFlash?.invoke(newText) != true) {
             flashing = true
             removeCallbacks(endFlash)
             postDelayed(endFlash, 1500)
