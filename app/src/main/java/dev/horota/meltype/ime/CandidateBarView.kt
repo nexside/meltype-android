@@ -14,6 +14,7 @@ import dev.horota.meltype.core.CompositionView
 /**
  * 1 行の候補バー (Q25 の 720×720 の画面でも邪魔にならない高さ)。左端に英 / 日の状態、右に候補。
  * 候補をタップすると onSelect(index)。入力中は右端に「カナ」「英数」を出し、タップすると onConvert。
+ * 何も入力していないときは隠す (高さ 0)。出すのは、入力中・「あ」/「A」を切り替えた直後の短い間・警告があるときだけ。
  */
 class CandidateBarView(
     context: Context,
@@ -21,6 +22,21 @@ class CandidateBarView(
     private val onConvert: (ConvertTarget) -> Unit,
 ) :
     LinearLayout(context), CandidateDisplay, StatusDisplay {
+
+    /** バーの中身。隠すときは content ごと GONE にして、全体の高さを 0 にする。 */
+    private val content = LinearLayout(context).apply {
+        orientation = HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setBackgroundColor(Color.rgb(0xF2, 0xF2, 0xF2))
+        minimumHeight = dp(36)
+        visibility = GONE
+    }
+    private var composing = false
+    private var flashing = false
+    private val endFlash = Runnable {
+        flashing = false
+        refresh()
+    }
 
     private val modeLabel = label().apply { setTypeface(typeface, Typeface.BOLD) }
     private val warningLabel = label().apply { setTextColor(Color.rgb(0xC6, 0x28, 0x28)) }
@@ -36,17 +52,19 @@ class CandidateBarView(
 
     init {
         orientation = HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setBackgroundColor(Color.rgb(0xF2, 0xF2, 0xF2))
-        minimumHeight = dp(36)
-        addView(modeLabel)
-        addView(warningLabel)
-        addView(readingLabel)
-        addView(HorizontalScrollView(context).apply {
+        addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
+        content.addView(modeLabel)
+        content.addView(warningLabel)
+        content.addView(readingLabel)
+        content.addView(HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
             addView(list)
         }, LayoutParams(0, LayoutParams.WRAP_CONTENT, 1f))
-        addView(convertButtons)
+        content.addView(convertButtons)
+    }
+
+    private fun refresh() {
+        content.visibility = if (composing || flashing || warningLabel.text.isNotEmpty()) VISIBLE else GONE
     }
 
     override fun show(view: CompositionView, inlineReading: Boolean) {
@@ -54,6 +72,8 @@ class CandidateBarView(
         convertButtons.visibility = if (view.text.isNotEmpty()) VISIBLE else GONE
         list.removeAllViews()
         val items = view.candidates.ifEmpty { view.predictions }
+        composing = view.text.isNotEmpty() || items.isNotEmpty()
+        refresh()
         val selected = if (view.candidates.isNotEmpty()) view.selectedIndex else view.selectedPrediction
         items.forEachIndexed { index, text ->
             list.addView(label().apply {
@@ -65,23 +85,35 @@ class CandidateBarView(
     }
 
     override fun hide() {
+        composing = false
+        refresh()
         readingLabel.text = ""
         convertButtons.visibility = GONE
         list.removeAllViews()
     }
 
     override fun showMode(mode: InputMode) {
-        modeLabel.text = when (mode) {
+        val newText = when (mode) {
             InputMode.JAPANESE -> "あ"
             InputMode.DIRECT -> "A"
             InputMode.PAUSED -> "⏸"
             InputMode.UNAVAILABLE -> "⚠"
         }
+        // 切り替えたときだけ、短く見せる (入力欄を移っただけのときや最初は見せない)
+        val changed = modeLabel.text.isNotEmpty() && modeLabel.text.toString() != newText
+        modeLabel.text = newText
+        if (changed) {
+            flashing = true
+            removeCallbacks(endFlash)
+            postDelayed(endFlash, 1500)
+        }
+        refresh()
     }
 
     /** null で消す。 */
     fun setWarning(text: String?) {
         warningLabel.text = text.orEmpty()
+        refresh()
     }
 
     private fun button(text: String, target: ConvertTarget) = label().apply {
