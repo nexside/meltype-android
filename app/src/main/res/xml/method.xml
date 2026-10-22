@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <input-method xmlns:android="http://schemas.android.com/apk/res/android"
     android:settingsActivity="dev.horota.meltype.settings.SettingsActivity">
-    <!-- 物理キーボードの配列 (JIS / US) は、この subtype ごとに Android の設定で選べる -->
+    <!--
+      物理キーボードの配列 (JIS / US) は、この subtype ごとに Android の設定で選べる。
+      言語 (ja-JP) を指定すると、Android が配列を日本語に固定し、Zinwa Q25 内蔵キーボードの Alt+文字 (数字・記号) が
+      使えなくなり、設定でも日本語しか選べなくなる (LineageOS 24 の Q25 で確認)。言語は指定しない。
+    -->
     <subtype
         android:label="@string/subtype_ja"
-        android:imeSubtypeLocale="ja_JP"
-        android:languageTag="ja-JP"
         android:imeSubtypeMode="keyboard" />
 </input-method>
