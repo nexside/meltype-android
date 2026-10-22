@@ -59,6 +59,8 @@ class CandidateBarView(
 
     init {
         orientation = HORIZONTAL
+        // 隠している間も窓が高さ 0 にならないように、1px だけ残す (0 だと端末によっては窓が出なくなる)
+        minimumHeight = 1
         addView(content, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         content.addView(modeLabel)
         content.addView(warningLabel)

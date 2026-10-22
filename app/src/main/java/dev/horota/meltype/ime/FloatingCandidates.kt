@@ -1,15 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.horota.meltype.ime
 
-import android.app.Dialog
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
-import android.view.Window
-import android.view.WindowManager
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -48,7 +45,7 @@ class FloatingCandidates(
         addView(buttons)
     }
 
-    private var dialog: Dialog? = null
+    private val window = ImeDialog(service, row, touchable = true)
     private var lastView: CompositionView? = null
 
     /** 候補を出す。入力カーソルの位置が分からない・窓を出せないときは false (候補バーを使う)。 */
@@ -73,37 +70,21 @@ class FloatingCandidates(
             })
         }
         buttons.visibility = if (view.text.isNotEmpty()) View.VISIBLE else View.GONE
-        return try {
-            val d = dialog ?: createDialog() ?: return false
-            place(d, a)
-            if (!d.isShowing) d.show()
-            true
-        } catch (e: RuntimeException) {
-            hide()
-            false
-        }
+        if (place(a)) return true
+        hide()
+        return false
     }
 
     /** 入力欄が入力カーソルの位置を新しく教えてくれたとき。出ていれば、その位置に合わせ直す。 */
     fun reposition() {
-        val d = dialog ?: return
         if (lastView == null) return
         val a = anchor() ?: return
-        try {
-            place(d, a)
-        } catch (e: RuntimeException) {
-            hide()
-        }
+        if (!place(a)) hide()
     }
 
     fun hide() {
         lastView = null
-        try {
-            dialog?.dismiss()
-        } catch (e: RuntimeException) {
-            // 窓がもう無いときは何もしない
-        }
-        dialog = null
+        window.dismiss()
     }
 
     /** 配色を変える。いま出ている候補は、次に出し直すときから新しい色になる。 */
@@ -119,34 +100,7 @@ class FloatingCandidates(
         setStroke(dp(1), theme.border)
     }
 
-    private fun createDialog(): Dialog? {
-        (row.parent as? android.view.ViewGroup)?.removeView(row)
-        val d = Dialog(service)
-        d.requestWindowFeature(Window.FEATURE_NO_TITLE)
-        d.setContentView(row)
-        val window = d.window ?: return null
-        val params = window.attributes
-        // 入力メソッドの窓に付けて、入力メソッド用のダイアログとして出す (権限は要らない)
-        params.token = service.window.window?.attributes?.token
-        params.type = WindowManager.LayoutParams.TYPE_INPUT_METHOD_DIALOG
-        params.gravity = Gravity.TOP or Gravity.START
-        params.width = WindowManager.LayoutParams.WRAP_CONTENT
-        params.height = WindowManager.LayoutParams.WRAP_CONTENT
-        window.attributes = params
-        window.setBackgroundDrawable(null)
-        // 入力欄からフォーカスを奪わない。タップは受ける (候補を選べるように)
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-        )
-        dialog = d
-        return d
-    }
-
-    private fun place(d: Dialog, a: Anchor) {
-        val window = d.window ?: return
+    private fun place(a: Anchor): Boolean {
         val metrics = service.resources.displayMetrics
         row.measure(
             View.MeasureSpec.makeMeasureSpec(metrics.widthPixels, View.MeasureSpec.AT_MOST),
@@ -157,12 +111,7 @@ class FloatingCandidates(
         val x = a.x.toInt().coerceIn(0, maxOf(0, metrics.widthPixels - w))
         var y = (a.top - h - dp(4)).toInt()
         if (y < 0) y = (a.bottom + dp(4)).toInt()
-        val params = window.attributes
-        params.x = x
-        params.y = y
-        params.width = w
-        params.height = h
-        window.attributes = params
+        return window.show(x, y, w, h)
     }
 
     private fun button(text: String, target: ConvertTarget) = label().apply {

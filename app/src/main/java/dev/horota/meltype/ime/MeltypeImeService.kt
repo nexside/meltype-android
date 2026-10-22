@@ -1,18 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.horota.meltype.ime
 
-import android.app.Dialog
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.util.TypedValue
-import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
-import android.view.Window
-import android.view.WindowManager
 import android.view.inputmethod.CursorAnchorInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
@@ -38,7 +34,18 @@ class MeltypeImeService : InputMethodService() {
     /** 入力欄が教えてくれた、入力カーソルの位置 (教えてくれない入力欄では null)。 */
     private var cursorInfo: CursorAnchorInfo? = null
     private lateinit var floating: FloatingCandidates
-    private var indicator: Dialog? = null
+    private val indicatorLabel by lazy {
+        TextView(this).apply {
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextColor(Color.WHITE)
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+            background = GradientDrawable().apply {
+                setColor(Color.argb(0xE6, 0x33, 0x33, 0x33))
+                cornerRadius = dp(8).toFloat()
+            }
+        }
+    }
+    private val indicatorWindow by lazy { ImeDialog(this, indicatorLabel, touchable = false) }
     private val hideIndicator = Runnable { dismissIndicator() }
 
     override fun onCreate() {
@@ -130,63 +137,27 @@ class MeltypeImeService : InputMethodService() {
 
     /** 「あ」/「A」の切り替えを、入力カーソルのすぐ下に短く出す。位置が分からない・出せないときは false。 */
     private fun flashAtCursor(text: String): Boolean {
-        val info = cursorInfo ?: return false
-        if ((info.insertionMarkerFlags and CursorAnchorInfo.FLAG_HAS_VISIBLE_REGION) == 0) return false
-        val x = info.insertionMarkerHorizontal
-        val y = info.insertionMarkerBottom
-        if (x.isNaN() || y.isNaN()) return false
-        val point = floatArrayOf(x, y)
-        info.matrix.mapPoints(point) // 入力欄の座標 → 画面の座標
-        return try {
-            dismissIndicator()
-            val label = TextView(this).apply {
-                this.text = text
-                setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-                setTextColor(Color.WHITE)
-                setPadding(dp(10), dp(4), dp(10), dp(4))
-                background = GradientDrawable().apply {
-                    setColor(Color.argb(0xE6, 0x33, 0x33, 0x33))
-                    cornerRadius = dp(8).toFloat()
-                }
-            }
-            val dialog = Dialog(this)
-            dialog.requestWindowFeature(Window.FEATURE_NO_TITLE)
-            dialog.setContentView(label)
-            val window = dialog.window ?: return false
-            val params = window.attributes
-            // 入力メソッドの窓に付けて、入力メソッド用のダイアログとして出す (権限は要らない)
-            params.token = this.window.window?.attributes?.token
-            params.type = WindowManager.LayoutParams.TYPE_INPUT_METHOD_DIALOG
-            params.gravity = Gravity.TOP or Gravity.START
-            params.x = point[0].toInt()
-            params.y = point[1].toInt() + dp(4)
-            window.attributes = params
-            window.setBackgroundDrawable(null)
-            window.addFlags(
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
-                    WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            )
-            dialog.show()
-            indicator = dialog
-            bar.postDelayed(hideIndicator, 1200)
-            true
-        } catch (e: RuntimeException) {
-            dismissIndicator()
-            false
-        }
+        val anchor = composingAnchor() ?: return false
+        indicatorLabel.text = text
+        indicatorLabel.measure(
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        val shown = indicatorWindow.show(
+            anchor.x.toInt(),
+            anchor.bottom.toInt() + dp(4),
+            indicatorLabel.measuredWidth,
+            indicatorLabel.measuredHeight,
+        )
+        if (!shown) return false
+        bar.removeCallbacks(hideIndicator)
+        bar.postDelayed(hideIndicator, 1200)
+        return true
     }
 
     private fun dismissIndicator() {
         bar.removeCallbacks(hideIndicator)
-        try {
-            indicator?.dismiss()
-        } catch (e: RuntimeException) {
-            // 窓がもう無いときは何もしない
-        }
-        indicator = null
+        indicatorWindow.dismiss()
     }
 
     private fun dp(value: Int): Int =
@@ -209,6 +180,7 @@ class MeltypeImeService : InputMethodService() {
         super.onStartInput(attribute, restarting)
         controller.options = prefs.bindingOptions
         applyTheme()
+        currentInputConnection?.requestCursorUpdates(InputConnection.CURSOR_UPDATE_MONITOR)
         controller.startInput(EditorPolicy.of(attribute.inputType, attribute.packageName, prefs.codeApps, attribute.imeOptions))
         updateInputViewShown()
     }
