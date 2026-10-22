@@ -13,6 +13,10 @@ interface EditorSink {
     fun commit(text: String)
     /** 未確定の文字を出す。"" なら消す。 */
     fun setComposing(text: String)
+    /** 未確定の文字のうち highlight の範囲 (変換中の文節) を反転して出す。非対応なら今までどおり。 */
+    fun setComposing(text: String, highlight: IntRange?) {
+        setComposing(text)
+    }
     fun finishComposing()
 }
 

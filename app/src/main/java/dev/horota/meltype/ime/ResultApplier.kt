@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.horota.meltype.ime
 
+import dev.horota.meltype.core.CompositionView
 import dev.horota.meltype.core.SessionResult
 import dev.horota.meltype.core.TextEdit
 
@@ -36,7 +37,7 @@ class ResultApplier(private val sink: EditorSink, private val display: Candidate
                 display.hide()
             } else {
                 if (view.text.isNotEmpty()) {
-                    sink.setComposing(view.text)
+                    sink.setComposing(view.text, highlightOf(view))
                     composing = true
                     selfEdit = true
                 } else {
@@ -47,6 +48,15 @@ class ResultApplier(private val sink: EditorSink, private val display: Candidate
         } finally {
             sink.endBatch()
         }
+    }
+
+    /** 変換中なら、選んでいる文節の範囲 (反転して見せる)。文節の並びが未確定の文字と合わないときは null。 */
+    private fun highlightOf(view: CompositionView): IntRange? {
+        if (!view.converting || view.selectedClause !in view.clauses.indices) return null
+        if (view.clauses.joinToString("") != view.text) return null
+        val start = view.clauses.take(view.selectedClause).sumOf { it.length }
+        val end = start + view.clauses[view.selectedClause].length
+        return if (end > start) start until end else null
     }
 
     /** 前に呼んでから入力欄を書き換えたか。呼ぶと忘れる。 */
