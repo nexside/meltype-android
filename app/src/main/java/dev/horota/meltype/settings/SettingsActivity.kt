@@ -13,7 +13,12 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
+import android.widget.Spinner
 import android.widget.Switch
+import dev.horota.meltype.ime.ThemeMode
 import android.widget.TextView
 import android.widget.Toast
 
@@ -40,6 +45,20 @@ class SettingsActivity : Activity() {
         root.addView(TextView(this).apply { text = "半角/全角キーはいつでも使えます。Ctrl+半角/全角 で一時停止します。" })
         root.addView(switch("Shift+Space で切り替える (Q25 向け)", prefs.shiftSpaceToggles) { prefs.shiftSpaceToggles = it })
         root.addView(switch("Ctrl+Space で切り替える", prefs.ctrlSpaceToggles) { prefs.ctrlSpaceToggles = it })
+
+        root.addView(heading("候補の配色"))
+        root.addView(Spinner(this).apply {
+            val names = listOf("システムに合わせる", "ライト (白地に黒文字)", "ダーク (黒地に白文字)")
+            adapter = ArrayAdapter(this@SettingsActivity, android.R.layout.simple_spinner_dropdown_item, names)
+            setSelection(prefs.themeMode.ordinal)
+            onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                    prefs.themeMode = ThemeMode.values()[position]
+                }
+
+                override fun onNothingSelected(parent: AdapterView<*>?) {}
+            }
+        })
 
         root.addView(heading("コード入力モードにするアプリ (1 行に 1 つ)"))
         val codeApps = EditText(this).apply { setText(CodeAppList.format(prefs.codeApps)); minLines = 3 }

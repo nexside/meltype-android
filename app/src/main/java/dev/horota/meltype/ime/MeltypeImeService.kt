@@ -2,6 +2,7 @@
 package dev.horota.meltype.ime
 
 import android.app.Dialog
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
@@ -83,6 +84,15 @@ class MeltypeImeService : InputMethodService() {
         }
         controller = ImeController(core, InputConnectionSink { currentInputConnection }, display, bar)
         bar.modeFlash = ::flashAtCursor
+        applyTheme()
+    }
+
+    /** 候補の配色 (設定。「システムに合わせる」なら端末のダークモード) を反映する。 */
+    private fun applyTheme() {
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val theme = CandidateTheme.of(prefs.themeMode, night)
+        bar.applyTheme(theme)
+        floating.applyTheme(theme)
     }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
@@ -198,6 +208,7 @@ class MeltypeImeService : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         controller.options = prefs.bindingOptions
+        applyTheme()
         controller.startInput(EditorPolicy.of(attribute.inputType, attribute.packageName, prefs.codeApps, attribute.imeOptions))
         updateInputViewShown()
     }

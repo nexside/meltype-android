@@ -29,6 +29,8 @@ class FloatingCandidates(
     /** 画面の座標。x は変換中の文字の左端、top / bottom はその行の上端 / 下端。 */
     data class Anchor(val x: Float, val top: Float, val bottom: Float)
 
+    private var theme = CandidateTheme.LIGHT
+
     private val list = LinearLayout(service).apply { orientation = LinearLayout.HORIZONTAL }
     private val buttons = LinearLayout(service).apply {
         orientation = LinearLayout.HORIZONTAL
@@ -38,11 +40,7 @@ class FloatingCandidates(
     private val row = LinearLayout(service).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        background = GradientDrawable().apply {
-            setColor(Color.rgb(0xF2, 0xF2, 0xF2))
-            cornerRadius = dp(8).toFloat()
-            setStroke(dp(1), Color.rgb(0xBB, 0xBB, 0xBB))
-        }
+        background = rowBackground()
         addView(HorizontalScrollView(service).apply {
             isHorizontalScrollBarEnabled = false
             addView(list)
@@ -68,8 +66,8 @@ class FloatingCandidates(
             list.addView(label().apply {
                 this.text = text
                 if (index == selected) {
-                    setBackgroundColor(Color.rgb(0x4C, 0xA0, 0xFF))
-                    setTextColor(Color.WHITE)
+                    setBackgroundColor(theme.selectedBackground)
+                    setTextColor(theme.selectedText)
                 }
                 if (view.candidates.isNotEmpty()) setOnClickListener { onSelect(index) }
             })
@@ -106,6 +104,19 @@ class FloatingCandidates(
             // 窓がもう無いときは何もしない
         }
         dialog = null
+    }
+
+    /** 配色を変える。いま出ている候補は、次に出し直すときから新しい色になる。 */
+    fun applyTheme(newTheme: CandidateTheme) {
+        theme = newTheme
+        row.background = rowBackground()
+        for (i in 0 until buttons.childCount) (buttons.getChildAt(i) as? TextView)?.setTextColor(newTheme.accent)
+    }
+
+    private fun rowBackground() = GradientDrawable().apply {
+        setColor(theme.background)
+        cornerRadius = dp(8).toFloat()
+        setStroke(dp(1), theme.border)
     }
 
     private fun createDialog(): Dialog? {
@@ -156,13 +167,13 @@ class FloatingCandidates(
 
     private fun button(text: String, target: ConvertTarget) = label().apply {
         this.text = text
-        setTextColor(Color.rgb(0x1A, 0x5F, 0xB4))
+        setTextColor(theme.accent)
         setOnClickListener { onConvert(target) }
     }
 
     private fun label() = TextView(service).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-        setTextColor(Color.BLACK)
+        setTextColor(theme.text)
         setPadding(dp(10), dp(4), dp(10), dp(4))
     }
 

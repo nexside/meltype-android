@@ -2,6 +2,7 @@
 package dev.horota.meltype.settings
 
 import android.content.Context
+import dev.horota.meltype.ime.ThemeMode
 import dev.horota.meltype.input.BindingOptions
 import dev.horota.meltype.input.EditorPolicy
 import java.io.File
@@ -22,6 +23,11 @@ class MeltypePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_CTRL_SPACE, true)
         set(value) = prefs.edit().putBoolean(KEY_CTRL_SPACE, value).apply()
 
+    /** 候補の配色。 */
+    var themeMode: ThemeMode
+        get() = ThemeMode.values().firstOrNull { it.name == prefs.getString(KEY_THEME, null) } ?: ThemeMode.SYSTEM
+        set(value) = prefs.edit().putString(KEY_THEME, value.name).apply()
+
     val bindingOptions: BindingOptions
         get() = BindingOptions(shiftSpaceToggles = shiftSpaceToggles, ctrlSpaceToggles = ctrlSpaceToggles)
 
@@ -29,6 +35,7 @@ class MeltypePrefs(context: Context) {
         private const val KEY_CODE_APPS = "code_apps"
         private const val KEY_SHIFT_SPACE = "shift_space_toggles"
         private const val KEY_CTRL_SPACE = "ctrl_space_toggles"
+        private const val KEY_THEME = "theme_mode"
 
         /** 本家の MELTYPE_DATA_DIR に渡す場所 (設定・学習・ユーザー辞書・ログ)。 */
         fun dataDirectory(context: Context): File = File(context.filesDir, "Meltype")

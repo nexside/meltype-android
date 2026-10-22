@@ -23,11 +23,13 @@ class CandidateBarView(
 ) :
     LinearLayout(context), CandidateDisplay, StatusDisplay {
 
+    private var theme = CandidateTheme.LIGHT
+
     /** バーの中身。隠すときは content ごと GONE にして、全体の高さを 0 にする。 */
     private val content = LinearLayout(context).apply {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
-        setBackgroundColor(Color.rgb(0xF2, 0xF2, 0xF2))
+        setBackgroundColor(theme.background)
         minimumHeight = dp(36)
         visibility = GONE
     }
@@ -44,7 +46,7 @@ class CandidateBarView(
     }
 
     private val modeLabel = label().apply { setTypeface(typeface, Typeface.BOLD) }
-    private val warningLabel = label().apply { setTextColor(Color.rgb(0xC6, 0x28, 0x28)) }
+    private val warningLabel = label().apply { setTextColor(theme.warning) }
     /** 入力欄が未確定の文字を描かないときの読み (Termux など)。 */
     private val readingLabel = label().apply { paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG }
     private val list = LinearLayout(context).apply { orientation = HORIZONTAL }
@@ -68,6 +70,16 @@ class CandidateBarView(
         content.addView(convertButtons)
     }
 
+    /** 配色を変える。いま出ている候補は、次に出し直すときから新しい色になる。 */
+    fun applyTheme(newTheme: CandidateTheme) {
+        theme = newTheme
+        content.setBackgroundColor(newTheme.background)
+        modeLabel.setTextColor(newTheme.text)
+        warningLabel.setTextColor(newTheme.warning)
+        readingLabel.setTextColor(newTheme.text)
+        for (i in 0 until convertButtons.childCount) (convertButtons.getChildAt(i) as? TextView)?.setTextColor(newTheme.accent)
+    }
+
     private fun refresh() {
         content.visibility = if (composing || flashing || warningLabel.text.isNotEmpty()) VISIBLE else GONE
     }
@@ -83,7 +95,10 @@ class CandidateBarView(
         items.forEachIndexed { index, text ->
             list.addView(label().apply {
                 this.text = text
-                if (index == selected) setBackgroundColor(Color.rgb(0x4C, 0xA0, 0xFF))
+                if (index == selected) {
+                    setBackgroundColor(theme.selectedBackground)
+                    setTextColor(theme.selectedText)
+                }
                 if (view.candidates.isNotEmpty()) setOnClickListener { onSelect(index) }
             })
         }
@@ -123,13 +138,13 @@ class CandidateBarView(
 
     private fun button(text: String, target: ConvertTarget) = label().apply {
         this.text = text
-        setTextColor(Color.rgb(0x1A, 0x5F, 0xB4))
+        setTextColor(theme.accent)
         setOnClickListener { onConvert(target) }
     }
 
     private fun label() = TextView(context).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
-        setTextColor(Color.BLACK)
+        setTextColor(theme.text)
         setPadding(dp(10), dp(4), dp(10), dp(4))
     }
 
