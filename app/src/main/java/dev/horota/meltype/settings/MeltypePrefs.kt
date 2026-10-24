@@ -34,7 +34,12 @@ class MeltypePrefs(context: Context) {
         get() = EmojiData.parseRecent(prefs.getString(KEY_RECENT_EMOJI, null))
         set(value) = prefs.edit().putString(KEY_RECENT_EMOJI, EmojiData.formatRecent(value)).apply()
 
-    /** 候補の配色。
+    /** オンにしているジャンル別辞書 ("builtin:it"、"user:名前")。 */
+    var enabledGenres: Set<String>
+        get() = prefs.getStringSet(KEY_GENRES, null)?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_GENRES, value).apply()
+
+    /** 候補の配色。 */
     var themeMode: ThemeMode
         get() = ThemeMode.values().firstOrNull { it.name == prefs.getString(KEY_THEME, null) } ?: ThemeMode.SYSTEM
         set(value) = prefs.edit().putString(KEY_THEME, value.name).apply()
@@ -49,6 +54,7 @@ class MeltypePrefs(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_BRACKETS = "cursor_between_brackets"
         private const val KEY_RECENT_EMOJI = "recent_emoji"
+        private const val KEY_GENRES = "enabled_genres"
 
         /** 本家の MELTYPE_DATA_DIR に渡す場所 (設定・学習・ユーザー辞書・ログ)。 */
         fun dataDirectory(context: Context): File = File(context.filesDir, "Meltype")

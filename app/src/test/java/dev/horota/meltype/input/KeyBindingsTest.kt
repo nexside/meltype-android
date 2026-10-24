@@ -75,6 +75,19 @@ class KeyBindingsTest {
     }
 
     @Test
+    fun altEnterOpensTheEmojiPanelForKeyboardsWithoutCtrl() {
+        assertEquals(BindingAction.OpenEmojiPanel, match(KeyEvent.KEYCODE_ENTER, KeyEvent.META_ALT_ON))
+        assertEquals(BindingAction.OpenEmojiPanel, match(KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.META_ALT_ON))
+    }
+
+    @Test
+    fun plainEnterAndShiftOrCtrlAltEnterAreNotBound() {
+        assertNull(match(KeyEvent.KEYCODE_ENTER))
+        assertNull(match(KeyEvent.KEYCODE_ENTER, KeyEvent.META_SHIFT_ON))
+        assertNull(match(KeyEvent.KEYCODE_ENTER, KeyEvent.META_ALT_ON or KeyEvent.META_CTRL_ON))
+    }
+
+    @Test
     fun plainPeriodAndAltPeriodAreNotBound() {
         assertNull(match(KeyEvent.KEYCODE_PERIOD))
         assertNull(match(KeyEvent.KEYCODE_PERIOD, KeyEvent.META_SHIFT_ON))

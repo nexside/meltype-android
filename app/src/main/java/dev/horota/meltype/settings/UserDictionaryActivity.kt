@@ -23,6 +23,7 @@ import java.io.IOException
  */
 class UserDictionaryActivity : Activity() {
     private lateinit var file: File
+    private var genre: String? = null
     private lateinit var editor: EditText
     private lateinit var bulk: EditText
     private lateinit var result: TextView
@@ -30,7 +31,9 @@ class UserDictionaryActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        file = File(MeltypePrefs.dataDirectory(this), "userdict.txt")
+        genre = intent.getStringExtra(EXTRA_GENRE)
+        file = if (genre != null) GenreStore(this).userGenreFile(genre) else File(MeltypePrefs.dataDirectory(this), "userdict.txt")
+        title = genre?.let { "ジャンル: $it" } ?: "ユーザー辞書"
 
         count = TextView(this)
         result = TextView(this).apply { gravity = Gravity.START }
@@ -166,6 +169,7 @@ class UserDictionaryActivity : Activity() {
     private fun writeDictionary(text: String) {
         file.parentFile?.mkdirs()
         file.writeText(text)
+        if (genre != null) GenreStore(this).sync() // オンのジャンルなら辞書のファイルを作り直す
     }
 
     private fun refresh() {
@@ -189,6 +193,7 @@ class UserDictionaryActivity : Activity() {
     }
 
     private companion object {
+        const val EXTRA_GENRE = "genre"
         const val REQUEST_PICK = 1
         const val MAX_SHOWN_LINES = 10
     }

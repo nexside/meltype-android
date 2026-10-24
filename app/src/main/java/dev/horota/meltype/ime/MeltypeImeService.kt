@@ -21,6 +21,7 @@ import dev.horota.meltype.core.CoreBridge
 import dev.horota.meltype.core.CoreOpenResult
 import dev.horota.meltype.input.EditorPolicy
 import dev.horota.meltype.input.KeyInput
+import dev.horota.meltype.settings.DictionaryFiles
 import dev.horota.meltype.settings.MeltypePrefs
 import dev.horota.meltype.settings.WordRegisterActivity
 import java.io.File
@@ -125,7 +126,7 @@ class MeltypeImeService : InputMethodService() {
                 startupNotice = "Meltype を初期化できませんでした"
             }
         }
-        userDictStamp = userDictionaryFile().lastModified()
+        userDictStamp = DictionaryFiles.stamp(MeltypePrefs.dataDirectory(this))
     }
 
     private fun newController(): ImeController =
@@ -133,11 +134,10 @@ class MeltypeImeService : InputMethodService() {
             it.onOpenEmojiPanel = ::openEmojiPanel
         }
 
-    private fun userDictionaryFile() = File(MeltypePrefs.dataDirectory(this), "userdict.txt")
 
     /** ユーザー辞書が変わっていたら (設定画面・単語登録・一括登録)、入力の本体を作り直して読み直す。 */
     private fun reloadIfUserDictionaryChanged() {
-        if (userDictionaryFile().lastModified() == userDictStamp) return
+        if (DictionaryFiles.stamp(MeltypePrefs.dataDirectory(this)) == userDictStamp) return
         floating.hide()
         controller.shutdown()
         core?.close()

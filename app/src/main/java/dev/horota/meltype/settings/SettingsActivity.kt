@@ -49,7 +49,7 @@ class SettingsActivity : Activity() {
         root.addView(heading("入力"))
         root.addView(switch("かっこの組 ( () ・ 「」 など) を確定したら、カーソルを間に置く", prefs.cursorBetweenBrackets) { prefs.cursorBetweenBrackets = it })
         root.addView(TextView(this).apply {
-            text = "絵文字の一覧は Ctrl+. (Ctrl+; ・ Win+. でも) で開きます。矢印で選んで Enter、Tab でカテゴリを切り替え、Esc で閉じます。" +
+            text = "絵文字の一覧は Ctrl+. (Ctrl+; ・ Win+. でも)、Ctrl の無い Q25 では Alt+Enter で開きます。矢印で選んで Enter、Tab でカテゴリを切り替え、Esc で閉じます。" +
                 "「えがお」「ねこ」「えもじ」などの読みで変換しても、候補の最後に絵文字が出ます (候補の「絵文字」ボタンで絞り込めます)。"
         })
 
@@ -78,6 +78,7 @@ class SettingsActivity : Activity() {
 
         root.addView(heading("辞書と学習"))
         root.addView(button("ユーザー辞書を編集する") { startActivity(Intent(this, UserDictionaryActivity::class.java)) })
+        root.addView(button("ジャンル別の辞書") { startActivity(Intent(this, GenreDictionaryActivity::class.java)) })
         root.addView(button("学習データを消す") { confirmClearLearning() })
 
         root.addView(heading("このアプリについて"))

@@ -38,6 +38,9 @@ object KeyBindings {
             KeyEvent.KEYCODE_PICTSYMBOLS -> BindingAction.OpenEmojiPanel
             KeyEvent.KEYCODE_PERIOD, KeyEvent.KEYCODE_SEMICOLON ->
                 if ((ctrl || meta) && !alt) BindingAction.OpenEmojiPanel else null
+            // Ctrl の無い Zinwa Q25 向け: Alt+Enter (Alt+Space は、Alt で数字・記号を続けて打ったあとにうっかり開くので使わない)
+            KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER ->
+                if (alt && !ctrl && !shift && !meta) BindingAction.OpenEmojiPanel else null
             KeyEvent.KEYCODE_ZENKAKU_HANKAKU -> if (ctrl) BindingAction.TogglePause else BindingAction.ToggleDirect
             KeyEvent.KEYCODE_EISU -> BindingAction.SetDirect(true)
             KeyEvent.KEYCODE_HENKAN -> BindingAction.RoleKey(0x1C, fallbackDirect = false)
