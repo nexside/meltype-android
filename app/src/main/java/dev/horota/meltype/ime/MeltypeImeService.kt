@@ -232,7 +232,11 @@ class MeltypeImeService : InputMethodService() {
         val anchor = composingAnchor()
         val x = if (anchor != null) anchor.x.toInt().coerceIn(0, maxOf(0, metrics.widthPixels - w)) else maxOf(0, (metrics.widthPixels - w) / 2)
         val y = if (anchor != null) anchor.bottom.toInt() + dp(4) else maxOf(0, metrics.heightPixels - h - dp(64))
-        if (!indicatorWindow.show(x, y, w, h)) return
+        if (!indicatorWindow.show(x, y, w, h)) {
+            // 窓を出せない端末・入力欄では、システムの短い通知で知らせる
+            android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
         handler.removeCallbacks(hideIndicator)
         handler.postDelayed(hideIndicator, millis)
     }
