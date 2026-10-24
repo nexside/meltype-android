@@ -211,6 +211,11 @@ class MeltypeImeService : InputMethodService() {
         }
         val points = floatArrayOf(left, top, left, bottom)
         info.matrix.mapPoints(points) // 入力欄の座標 → 画面の座標
+        // 入力欄が (0, 0) のような意味のない位置を返すことがある。画面の外・高さ 0 のときは位置不明として扱う
+        val metrics = resources.displayMetrics
+        val valid = points[3] > points[1] && points[1] > 0f && points[3] < metrics.heightPixels &&
+            points[0] >= 0f && points[0] < metrics.widthPixels
+        if (!valid) return null
         return FloatingCandidates.Anchor(points[0], points[1], points[3])
     }
 
@@ -251,6 +256,15 @@ class MeltypeImeService : InputMethodService() {
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
+
+    /** 入力の窓は 1px で何も見せないので、アプリの画面を押し上げたり縮めたりしない。 */
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        val bottom = window.window?.decorView?.height ?: return
+        if (bottom <= 0) return
+        outInsets.contentTopInsets = bottom
+        outInsets.visibleTopInsets = bottom
+    }
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
