@@ -250,7 +250,16 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         val anchor = composingAnchor()
         val x = if (anchor != null) anchor.x.toInt().coerceIn(0, maxOf(0, metrics.widthPixels - w)) else maxOf(0, (metrics.widthPixels - w) / 2)
         val y = if (anchor != null) anchor.bottom.toInt() + dp(4) else maxOf(0, metrics.heightPixels - h - dp(64))
-        if (!indicatorWindow.show(x, y, w, h)) {
+        val shown = indicatorWindow.show(x, y, w, h)
+        run { // 診断 (表示されない原因の調査用。あとで外す)
+            val loc = IntArray(2)
+            overlay.getLocationOnScreen(loc)
+            val note = "診断 shown=$shown attached=${overlay.isAttachedToWindow} host=${overlay.width}x${overlay.height}@${loc[0]},${loc[1]} " +
+                "vis=${overlay.isShown} place=$x,$y,${w}x$h anchor=${anchor?.let { "${it.x.toInt()},${it.top.toInt()}-${it.bottom.toInt()}" }} " +
+                "label=${indicatorLabel.left},${indicatorLabel.top},${indicatorLabel.width}x${indicatorLabel.height} screen=${metrics.widthPixels}x${metrics.heightPixels}"
+            android.widget.Toast.makeText(this, note, android.widget.Toast.LENGTH_LONG).show()
+        }
+        if (!shown) {
             // 窓を出せない端末・入力欄では、システムの短い通知で知らせる
             android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
             return
