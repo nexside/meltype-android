@@ -19,6 +19,9 @@ class OverlayHost(context: Context) : FrameLayout(context) {
     private val location = IntArray(2)
 
     init {
+        // 子 View の字形が枠の外に 1px はみ出しても切らない
+        clipChildren = false
+        clipToPadding = false
         addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> reapply() }
     }
 

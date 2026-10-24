@@ -123,9 +123,14 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     private val indicatorLabel by lazy {
         TextView(this).apply {
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            // 「あ」は A より上下左右にはみ出す。枠ぴったりだと切れるので、余白と最小サイズを多めに取る
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             setTextColor(Color.WHITE)
-            setPadding(dp(10), dp(4), dp(10), dp(4))
+            gravity = android.view.Gravity.CENTER
+            includeFontPadding = true
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            minWidth = dp(52)
+            minHeight = dp(44)
             background = GradientDrawable().apply {
                 setColor(Color.argb(0xE6, 0x33, 0x33, 0x33))
                 cornerRadius = dp(8).toFloat()
@@ -313,8 +318,9 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             View.MeasureSpec.makeMeasureSpec(metrics.widthPixels - dp(32), View.MeasureSpec.AT_MOST),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
         )
-        val w = indicatorLabel.measuredWidth
-        val h = indicatorLabel.measuredHeight
+        // measured ぴったりだと字形の端が 1px 切れる
+        val w = indicatorLabel.measuredWidth + dp(4)
+        val h = indicatorLabel.measuredHeight + dp(6)
         val anchor = composingAnchor()
         val x = if (anchor != null) anchor.x.toInt().coerceIn(0, maxOf(0, metrics.widthPixels - w)) else maxOf(0, (metrics.widthPixels - w) / 2)
         val y = if (anchor != null) anchor.bottom.toInt() + dp(4) else maxOf(0, metrics.heightPixels - h - dp(64))
