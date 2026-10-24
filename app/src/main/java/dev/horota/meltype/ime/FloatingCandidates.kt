@@ -140,8 +140,9 @@ class FloatingCandidates(
             View.MeasureSpec.makeMeasureSpec(metrics.widthPixels - dp(8), View.MeasureSpec.AT_MOST),
             View.MeasureSpec.makeMeasureSpec(metrics.heightPixels, View.MeasureSpec.AT_MOST),
         )
-        val w = row.measuredWidth
-        val h = row.measuredHeight
+        // 候補は 1 行。大きく測れてしまっても、画面を覆わないように切る
+        val w = minOf(row.measuredWidth, metrics.widthPixels - dp(8))
+        val h = minOf(row.measuredHeight, dp(48))
         val a = anchor()
         val x: Int
         val y: Int
@@ -167,6 +168,7 @@ class FloatingCandidates(
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
         setTextColor(theme.text)
         setPadding(dp(10), dp(4), dp(10), dp(4))
+        setSingleLine()
     }
 
     private fun dp(value: Int): Int =
