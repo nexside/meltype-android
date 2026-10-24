@@ -33,7 +33,7 @@ import java.io.File
  * Android 11 以降は、表示を頼まれていない IME の窓は見えないので、1px の入力用の窓 (input view) を出し、
  * 文字を打ち始めたら自分で表示を頼む (requestShowSelf)。
  */
-class MeltypeImeService : InputMethodService() (), OverlayOwner {
+class MeltypeImeService : InputMethodService(), OverlayOwner {
     override val overlay: OverlayHost by lazy { OverlayHost(this) }
     private lateinit var prefs: MeltypePrefs
     private lateinit var controller: ImeController
