@@ -11,6 +11,10 @@ interface EditorSink {
     fun textAfterCursor(length: Int): String?
     fun deleteBefore(length: Int)
     fun commit(text: String)
+    /** open + close を確定して、カーソルを間に置く (「()」の中に書き始められるように)。非対応なら続けて確定するだけ。 */
+    fun commitInside(open: String, close: String) {
+        commit(open + close)
+    }
     /** 未確定の文字を出す。"" なら消す。 */
     fun setComposing(text: String)
     /** 未確定の文字のうち highlight の範囲 (変換中の文節) を反転して出す。非対応なら今までどおり。 */

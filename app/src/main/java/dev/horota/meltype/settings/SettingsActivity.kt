@@ -46,6 +46,13 @@ class SettingsActivity : Activity() {
         root.addView(switch("Shift+Space で切り替える (Q25 向け)", prefs.shiftSpaceToggles) { prefs.shiftSpaceToggles = it })
         root.addView(switch("Ctrl+Space で切り替える", prefs.ctrlSpaceToggles) { prefs.ctrlSpaceToggles = it })
 
+        root.addView(heading("入力"))
+        root.addView(switch("かっこの組 ( () ・ 「」 など) を確定したら、カーソルを間に置く", prefs.cursorBetweenBrackets) { prefs.cursorBetweenBrackets = it })
+        root.addView(TextView(this).apply {
+            text = "絵文字の一覧は Ctrl+. (Ctrl+; ・ Win+. でも) で開きます。矢印で選んで Enter、Tab でカテゴリを切り替え、Esc で閉じます。" +
+                "「えがお」「ねこ」「えもじ」などの読みで変換しても、候補の最後に絵文字が出ます (候補の「絵文字」ボタンで絞り込めます)。"
+        })
+
         root.addView(heading("候補の配色"))
         root.addView(Spinner(this).apply {
             val names = listOf("システムに合わせる", "ライト (白地に黒文字)", "ダーク (黒地に白文字)")

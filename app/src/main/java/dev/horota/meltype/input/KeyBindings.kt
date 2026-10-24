@@ -15,6 +15,9 @@ sealed interface BindingAction {
 
     /** Meltype を一時停止する / 戻す (停止中はキーをすべてアプリに渡す)。 */
     data object TogglePause : BindingAction
+
+    /** 絵文字の一覧を開く。 */
+    data object OpenEmojiPanel : BindingAction
 }
 
 data class BindingOptions(val shiftSpaceToggles: Boolean = true, val ctrlSpaceToggles: Boolean = true)
@@ -29,7 +32,12 @@ object KeyBindings {
         val ctrl = metaState and KeyEvent.META_CTRL_ON != 0
         val shift = metaState and KeyEvent.META_SHIFT_ON != 0
         val alt = metaState and KeyEvent.META_ALT_ON != 0
+        val meta = metaState and KeyEvent.META_META_ON != 0
         return when (keyCode) {
+            // 絵文字の一覧: Ctrl+. / Ctrl+; / Meta(Win)+. / Meta+; (Windows・Mac の絵文字パネルと同じ組み合わせ)、絵文字キーがあれば それ
+            KeyEvent.KEYCODE_PICTSYMBOLS -> BindingAction.OpenEmojiPanel
+            KeyEvent.KEYCODE_PERIOD, KeyEvent.KEYCODE_SEMICOLON ->
+                if ((ctrl || meta) && !alt) BindingAction.OpenEmojiPanel else null
             KeyEvent.KEYCODE_ZENKAKU_HANKAKU -> if (ctrl) BindingAction.TogglePause else BindingAction.ToggleDirect
             KeyEvent.KEYCODE_EISU -> BindingAction.SetDirect(true)
             KeyEvent.KEYCODE_HENKAN -> BindingAction.RoleKey(0x1C, fallbackDirect = false)

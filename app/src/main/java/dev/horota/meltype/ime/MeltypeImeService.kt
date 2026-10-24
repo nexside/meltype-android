@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.horota.meltype.ime
 
+import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
+import android.os.Handler
+import android.os.Looper
 import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
@@ -13,27 +16,41 @@ import android.view.inputmethod.CursorAnchorInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.widget.TextView
-import dev.horota.meltype.core.CoreBridge
 import dev.horota.meltype.core.CompositionView
+import dev.horota.meltype.core.CoreBridge
 import dev.horota.meltype.core.CoreOpenResult
 import dev.horota.meltype.input.EditorPolicy
 import dev.horota.meltype.input.KeyInput
 import dev.horota.meltype.settings.MeltypePrefs
+import dev.horota.meltype.settings.WordRegisterActivity
 import java.io.File
 
 /**
- * v0.1: 物理キーボード専用。画面キーボードは出さず、候補バーだけ出す。
- * Android 11 以降は、表示を頼まれていない IME の窓は見えないので、候補バーを入力用の窓 (input view) として出し、
+ * 物理キーボード専用。画面キーボードも、画面の下の候補バーも出さない。
+ * 候補・モードの表示・絵文字の一覧は、入力カーソルの近くに浮かべる小さな窓 (ImeDialog) に出す。
+ * Android 11 以降は、表示を頼まれていない IME の窓は見えないので、1px の入力用の窓 (input view) を出し、
  * 文字を打ち始めたら自分で表示を頼む (requestShowSelf)。
  */
 class MeltypeImeService : InputMethodService() {
     private lateinit var prefs: MeltypePrefs
-    private lateinit var bar: CandidateBarView
     private lateinit var controller: ImeController
     private var core: CoreBridge? = null
+    private val handler = Handler(Looper.getMainLooper())
+
     /** 入力欄が教えてくれた、入力カーソルの位置 (教えてくれない入力欄では null)。 */
     private var cursorInfo: CursorAnchorInfo? = null
     private lateinit var floating: FloatingCandidates
+    private lateinit var emojiPanel: EmojiPanel
+
+    /** 一覧のキーで使ったキー (離したときも入力に回さない)。 */
+    private val panelConsumed = mutableSetOf<Int>()
+
+    /** 起動時に見せる知らせ (Mozc が使えないなど)。一度だけ。 */
+    private var startupNotice: String? = null
+
+    /** 読み込んだときの userdict.txt の更新時刻。変わっていたら、入力の本体を作り直して辞書を読み直す。 */
+    private var userDictStamp = 0L
+
     private val indicatorLabel by lazy {
         TextView(this).apply {
             setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
@@ -46,60 +63,122 @@ class MeltypeImeService : InputMethodService() {
         }
     }
     private val indicatorWindow by lazy { ImeDialog(this, indicatorLabel, touchable = false) }
-    private val hideIndicator = Runnable { dismissIndicator() }
+    private val hideIndicator = Runnable { indicatorWindow.dismiss() }
+
+    private val display = object : CandidateDisplay {
+        override fun show(view: CompositionView, inlineReading: Boolean) {
+            floating.show(view, inlineReading)
+        }
+
+        override fun hide() {
+            floating.hide()
+        }
+    }
+
+    /** 「あ」/「A」の表示。切り替えたときだけ、入力カーソルの近くに短く出す。 */
+    private val status = object : StatusDisplay {
+        private var last: String? = null
+
+        override fun showMode(mode: InputMode) {
+            val text = when (mode) {
+                InputMode.JAPANESE -> "あ"
+                InputMode.DIRECT -> "A"
+                InputMode.PAUSED -> "⏸"
+                InputMode.UNAVAILABLE -> "⚠"
+            }
+            val changed = last != null && last != text
+            last = text
+            if (changed) showIndicator(text, 1200)
+        }
+    }
 
     override fun onCreate() {
         super.onCreate()
         prefs = MeltypePrefs(this)
-        bar = CandidateBarView(
-            this,
-            onSelect = { index -> controller.selectCandidate(index) },
-            onConvert = { target -> controller.convert(target) },
-        )
-        val opened = CoreBridge.open(
-            MeltypePrefs.dataDirectory(this),
-            File(applicationInfo.nativeLibraryDir, "libmozc_helper.so"),
-        )
-        when (opened) {
-            is CoreOpenResult.Ready -> {
-                core = opened.core
-                bar.setWarning(if (opened.mozcAvailable) null else "漢字変換を使えません")
-            }
-            is CoreOpenResult.Failed -> bar.setWarning("Meltype を初期化できませんでした")
-        }
+        openCore()
         floating = FloatingCandidates(
             this,
             anchor = ::composingAnchor,
+            recent = { prefs.recentEmoji },
             onSelect = { index -> controller.selectCandidate(index) },
             onConvert = { target -> controller.convert(target) },
+            onRegister = ::openRegistration,
         )
-        // 候補は、変換中の文字の上に出す。入力欄が位置を教えてくれないとき (Termux など) だけ、画面の下の候補バーに出す
-        val display = object : CandidateDisplay {
-            override fun show(view: CompositionView, inlineReading: Boolean) {
-                if (!inlineReading && floating.show(view)) {
-                    bar.hide()
-                } else {
-                    floating.hide()
-                    bar.show(view, inlineReading)
-                }
-            }
+        emojiPanel = EmojiPanel(
+            this,
+            anchor = ::composingAnchor,
+            recent = { prefs.recentEmoji },
+            onPick = ::commitEmoji,
+        )
+        controller = newController()
+        applyTheme()
+    }
 
-            override fun hide() {
-                floating.hide()
-                bar.hide()
+    private fun openCore() {
+        when (val opened = CoreBridge.open(MeltypePrefs.dataDirectory(this), File(applicationInfo.nativeLibraryDir, "libmozc_helper.so"))) {
+            is CoreOpenResult.Ready -> {
+                core = opened.core
+                if (!opened.mozcAvailable) startupNotice = "漢字変換を使えません"
+            }
+            is CoreOpenResult.Failed -> {
+                core = null
+                startupNotice = "Meltype を初期化できませんでした"
             }
         }
-        controller = ImeController(core, InputConnectionSink { currentInputConnection }, display, bar)
-        bar.modeFlash = ::flashAtCursor
-        applyTheme()
+        userDictStamp = userDictionaryFile().lastModified()
+    }
+
+    private fun newController(): ImeController =
+        ImeController(core, InputConnectionSink({ currentInputConnection }, ::onCommitted), display, status).also {
+            it.onOpenEmojiPanel = ::openEmojiPanel
+        }
+
+    private fun userDictionaryFile() = File(MeltypePrefs.dataDirectory(this), "userdict.txt")
+
+    /** ユーザー辞書が変わっていたら (設定画面・単語登録・一括登録)、入力の本体を作り直して読み直す。 */
+    private fun reloadIfUserDictionaryChanged() {
+        if (userDictionaryFile().lastModified() == userDictStamp) return
+        floating.hide()
+        controller.shutdown()
+        core?.close()
+        core = null
+        openCore()
+        controller = newController()
     }
 
     /** 候補の配色 (設定。「システムに合わせる」なら端末のダークモード) を反映する。 */
     private fun applyTheme() {
         val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val theme = CandidateTheme.of(prefs.themeMode, night)
-        bar.applyTheme(theme)
         floating.applyTheme(theme)
+        emojiPanel.applyTheme(theme)
+    }
+
+    /** 確定した文字。絵文字なら「最近使った絵文字」に入れる (候補から選んだときも)。 */
+    private fun onCommitted(text: String) {
+        if (text.length <= MAX_EMOJI_LENGTH && EmojiData.isEmoji(text)) rememberEmoji(text)
+    }
+
+    private fun rememberEmoji(emoji: String) {
+        prefs.recentEmoji = EmojiData.pushRecent(prefs.recentEmoji, emoji)
+    }
+
+    private fun openEmojiPanel() {
+        emojiPanel.show()
+    }
+
+    private fun commitEmoji(emoji: String) {
+        rememberEmoji(emoji)
+        currentInputConnection?.commitText(emoji, 1)
+    }
+
+    /** 変換した語をユーザー辞書に登録する画面を開く (読みは、変換する前に打っていた文字)。 */
+    private fun openRegistration(view: CompositionView) {
+        val intent = Intent(this, WordRegisterActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .putExtra(WordRegisterActivity.EXTRA_READING, controller.lastReading.orEmpty())
+            .putExtra(WordRegisterActivity.EXTRA_WORD, view.text)
+        startActivity(intent)
     }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
@@ -135,40 +214,37 @@ class MeltypeImeService : InputMethodService() {
         return FloatingCandidates.Anchor(points[0], points[1], points[3])
     }
 
-    /** 「あ」/「A」の切り替えを、入力カーソルのすぐ下に短く出す。位置が分からない・出せないときは false。 */
-    private fun flashAtCursor(text: String): Boolean {
-        val anchor = composingAnchor() ?: return false
+    /** 小さな知らせ (「あ」/「A」・警告) を、入力カーソルのすぐ下に出す。位置が分からないときは画面の下の少し上。 */
+    private fun showIndicator(text: String, millis: Long) {
+        val metrics = resources.displayMetrics
         indicatorLabel.text = text
         indicatorLabel.measure(
-            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(metrics.widthPixels - dp(32), View.MeasureSpec.AT_MOST),
             View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
         )
-        val shown = indicatorWindow.show(
-            anchor.x.toInt(),
-            anchor.bottom.toInt() + dp(4),
-            indicatorLabel.measuredWidth,
-            indicatorLabel.measuredHeight,
-        )
-        if (!shown) return false
-        bar.removeCallbacks(hideIndicator)
-        bar.postDelayed(hideIndicator, 1200)
-        return true
+        val w = indicatorLabel.measuredWidth
+        val h = indicatorLabel.measuredHeight
+        val anchor = composingAnchor()
+        val x = if (anchor != null) anchor.x.toInt().coerceIn(0, maxOf(0, metrics.widthPixels - w)) else maxOf(0, (metrics.widthPixels - w) / 2)
+        val y = if (anchor != null) anchor.bottom.toInt() + dp(4) else maxOf(0, metrics.heightPixels - h - dp(64))
+        if (!indicatorWindow.show(x, y, w, h)) return
+        handler.removeCallbacks(hideIndicator)
+        handler.postDelayed(hideIndicator, millis)
     }
 
     private fun dismissIndicator() {
-        bar.removeCallbacks(hideIndicator)
+        handler.removeCallbacks(hideIndicator)
         indicatorWindow.dismiss()
     }
 
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
-    override fun onCreateInputView(): View {
-        (bar.parent as? ViewGroup)?.removeView(bar)
-        return bar
-    }
+    /** 1px の透明な窓。候補は浮かべる窓に出すので、画面の下にバーは出さない。 */
+    override fun onCreateInputView(): View =
+        View(this).apply { layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1) }
 
-    /** 物理キーボードがあっても候補バーを出す (既定では物理キーボードがあると出さない)。パスワード欄などでは出さない。 */
+    /** 物理キーボードがあっても入力用の窓を出す (既定では物理キーボードがあると出さない)。パスワード欄などでは出さない。 */
     override fun onEvaluateInputViewShown(): Boolean {
         super.onEvaluateInputViewShown()
         return !::controller.isInitialized || controller.showsBar
@@ -178,14 +254,21 @@ class MeltypeImeService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        reloadIfUserDictionaryChanged()
         controller.options = prefs.bindingOptions
+        controller.cursorBetweenBrackets = prefs.cursorBetweenBrackets
         applyTheme()
         currentInputConnection?.requestCursorUpdates(InputConnection.CURSOR_UPDATE_MONITOR)
         controller.startInput(EditorPolicy.of(attribute.inputType, attribute.packageName, prefs.codeApps, attribute.imeOptions))
         updateInputViewShown()
+        startupNotice?.let {
+            startupNotice = null
+            showIndicator(it, 4000)
+        }
     }
 
     override fun onFinishInput() {
+        emojiPanel.hide()
         floating.hide()
         dismissIndicator()
         cursorInfo = null
@@ -206,6 +289,7 @@ class MeltypeImeService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        emojiPanel.hide()
         floating.hide()
         dismissIndicator()
         controller.shutdown()
@@ -215,6 +299,10 @@ class MeltypeImeService : InputMethodService() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (emojiPanel.isShowing && emojiPanel.onKey(keyCode, event)) {
+            panelConsumed += keyCode
+            return true
+        }
         val key = KeyInput(keyCode, event.getUnicodeChar(event.metaState), event.getUnicodeChar(0), event.metaState)
         if (controller.keyDown(key)) {
             // 入力欄をタップせずに打ち始めたときは、まだ窓が出ていない
@@ -225,5 +313,10 @@ class MeltypeImeService : InputMethodService() {
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
-        controller.keyUp(keyCode) || super.onKeyUp(keyCode, event)
+        panelConsumed.remove(keyCode) || controller.keyUp(keyCode) || super.onKeyUp(keyCode, event)
+
+    private companion object {
+        /** 「最近使った絵文字」に入れる、確定した文字の長さの上限 (旗や家族の絵文字は 10 文字を超えることがある)。 */
+        const val MAX_EMOJI_LENGTH = 16
+    }
 }

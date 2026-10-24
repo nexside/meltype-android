@@ -15,6 +15,7 @@ class FakeEditor : EditorSink, CandidateDisplay {
     override fun textAfterCursor(length: Int): String = after.take(length)
     override fun deleteBefore(length: Int) { ops += "delete:$length" }
     override fun commit(text: String) { ops += "commit:$text" }
+    override fun commitInside(open: String, close: String) { ops += "inside:$open$close" }
     override fun setComposing(text: String) { ops += "composing:$text" }
     override fun finishComposing() { ops += "finish" }
     override fun show(view: CompositionView, inlineReading: Boolean) {

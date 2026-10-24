@@ -14,6 +14,13 @@ class ResultApplier(private val sink: EditorSink, private val display: Candidate
     /** 候補バーに読みも出すか (入力欄が未確定の文字を描かないとき)。 */
     var inlineReading: Boolean = false
 
+    /** 確定した文字がちょうどかっこの組 (「()」など) なら、カーソルを間に置く。 */
+    var cursorBetweenBrackets: Boolean = false
+
+    /** 直近の、変換する前の入力 (読み)。単語登録の読みに使う。 */
+    var lastReading: String? = null
+        private set
+
     /** 前の takeSelfEdit の後に入力欄を書き換えたか (onUpdateSelection が自分の書き換えによるものかを見分ける)。 */
     private var selfEdit = false
 
@@ -27,7 +34,8 @@ class ResultApplier(private val sink: EditorSink, private val display: Candidate
                     selfEdit = true
                 }
                 if (edit.text.isNotEmpty()) {
-                    sink.commit(edit.text)
+                    val pair = if (cursorBetweenBrackets) BracketPairs.split(edit.text) else null
+                    if (pair != null) sink.commitInside(pair.first, pair.second) else sink.commit(edit.text)
                     selfEdit = true
                 }
             }
@@ -37,6 +45,7 @@ class ResultApplier(private val sink: EditorSink, private val display: Candidate
                 display.hide()
             } else {
                 if (view.text.isNotEmpty()) {
+                    if (!view.converting) lastReading = view.text
                     sink.setComposing(view.text, highlightOf(view))
                     composing = true
                     selfEdit = true

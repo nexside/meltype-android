@@ -26,5 +26,10 @@
             </intent-filter>
         </activity>
         <activity android:name=".settings.UserDictionaryActivity" android:exported="false" />
+        <activity
+            android:name=".settings.WordRegisterActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog" />
     </application>
 </manifest>

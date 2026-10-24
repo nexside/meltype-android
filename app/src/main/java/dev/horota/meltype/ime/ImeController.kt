@@ -44,6 +44,25 @@ class ImeController(
 
     var options: BindingOptions = BindingOptions()
 
+    /** 確定した文字がかっこの組なら、カーソルを間に置く。 */
+    var cursorBetweenBrackets: Boolean
+        get() = applier.cursorBetweenBrackets
+        set(value) {
+            applier.cursorBetweenBrackets = value
+        }
+
+    /** 絵文字の一覧を開くキーが押された。呼ぶ前に、入力中の文字は確定してある。 */
+    var onOpenEmojiPanel: (() -> Unit)? = null
+
+    /** 直近の、変換する前の入力 (単語登録の読みに使う)。 */
+    val lastReading: String?
+        get() = applier.lastReading
+
+    /** 入力中の文字をそのまま確定する (一覧を開くときなど)。 */
+    fun commitComposition() {
+        commitPending()
+    }
+
     /** 候補バーを出すか。Meltype を通さない入力欄 (パスワードなど) では出さない。 */
     val showsBar: Boolean
         get() = !policy.bypass
@@ -147,6 +166,10 @@ class ImeController(
                 if (result != null) applier.apply(result) else setDirect(binding.fallbackDirect)
             }
             BindingAction.TogglePause -> togglePause()
+            BindingAction.OpenEmojiPanel -> {
+                commitPending()
+                onOpenEmojiPanel?.invoke()
+            }
         }
     }
 

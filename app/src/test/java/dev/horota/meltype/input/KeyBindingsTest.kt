@@ -65,4 +65,19 @@ class KeyBindingsTest {
         assertNull(match(KeyEvent.KEYCODE_E, KeyEvent.META_ALT_ON))
         assertNull(match(KeyEvent.KEYCODE_K, KeyEvent.META_ALT_ON))
     }
+
+    @Test
+    fun emojiPanelKeys() {
+        assertEquals(BindingAction.OpenEmojiPanel, match(KeyEvent.KEYCODE_PERIOD, KeyEvent.META_CTRL_ON))
+        assertEquals(BindingAction.OpenEmojiPanel, match(KeyEvent.KEYCODE_SEMICOLON, KeyEvent.META_CTRL_ON))
+        assertEquals(BindingAction.OpenEmojiPanel, match(KeyEvent.KEYCODE_PERIOD, KeyEvent.META_META_ON))
+        assertEquals(BindingAction.OpenEmojiPanel, match(KeyEvent.KEYCODE_PICTSYMBOLS))
+    }
+
+    @Test
+    fun plainPeriodAndAltPeriodAreNotBound() {
+        assertNull(match(KeyEvent.KEYCODE_PERIOD))
+        assertNull(match(KeyEvent.KEYCODE_PERIOD, KeyEvent.META_SHIFT_ON))
+        assertNull(match(KeyEvent.KEYCODE_PERIOD, KeyEvent.META_CTRL_ON or KeyEvent.META_ALT_ON))
+    }
 }

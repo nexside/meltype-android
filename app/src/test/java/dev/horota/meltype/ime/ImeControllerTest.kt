@@ -251,4 +251,67 @@ class ImeControllerTest {
         assertTrue("select:1" in core.calls)
         assertTrue("commit:京" in editor.ops)
     }
+
+    @Test
+    fun emojiPanelKeyCommitsWhatIsBeingTypedThenOpensThePanel() {
+        controller.startInput(text)
+        var opened = 0
+        controller.onOpenEmojiPanel = { opened++ }
+        core.calls.clear()
+
+        val consumed = controller.keyDown(KeyInput(KeyEvent.KEYCODE_PERIOD, '.'.code, '.'.code, KeyEvent.META_CTRL_ON))
+
+        assertTrue(consumed)
+        assertEquals(1, opened)
+        assertEquals(listOf("commit"), core.calls) // 文字は Core に渡さない
+    }
+
+    @Test
+    fun committedBracketPairPutsTheCaretBetweenWhenEnabled() {
+        controller.startInput(text)
+        controller.cursorBetweenBrackets = true
+        core.next = SessionResult(true, listOf(TextEdit(0, "()")), null)
+        editor.ops.clear()
+
+        controller.keyDown(letter('a'))
+
+        assertTrue("inside:()" in editor.ops)
+        assertFalse("commit:()" in editor.ops)
+    }
+
+    @Test
+    fun bracketPairIsCommittedAsIsWhenTheSettingIsOff() {
+        controller.startInput(text)
+        controller.cursorBetweenBrackets = false
+        core.next = SessionResult(true, listOf(TextEdit(0, "()")), null)
+        editor.ops.clear()
+
+        controller.keyDown(letter('a'))
+
+        assertTrue("commit:()" in editor.ops)
+        assertFalse("inside:()" in editor.ops)
+    }
+
+    @Test
+    fun otherTextsAreNeverSplit() {
+        controller.startInput(text)
+        controller.cursorBetweenBrackets = true
+        core.next = SessionResult(true, listOf(TextEdit(0, "print()")), null)
+        editor.ops.clear()
+
+        controller.keyDown(letter('a'))
+
+        assertTrue("commit:print()" in editor.ops)
+    }
+
+    @Test
+    fun remembersTheReadingBeforeConversion() {
+        controller.startInput(text)
+        core.next = SessionResult(true, emptyList(), CompositionView(text = "きょう"))
+        controller.keyDown(letter('k'))
+        core.next = SessionResult(true, emptyList(), CompositionView(text = "今日", converting = true, candidates = listOf("今日", "京")))
+        controller.keyDown(KeyInput(KeyEvent.KEYCODE_SPACE, ' '.code, ' '.code, 0))
+
+        assertEquals("きょう", controller.lastReading)
+    }
 }

@@ -9,7 +9,11 @@ import android.text.style.ForegroundColorSpan
 import android.view.inputmethod.InputConnection
 
 /** EditorSink の本物。InputConnection は入力欄が変わるたびに変わるので、毎回取り直す。 */
-class InputConnectionSink(private val connection: () -> InputConnection?) : EditorSink {
+class InputConnectionSink(
+    private val connection: () -> InputConnection?,
+    /** 確定した文字を知らせる (最近使った絵文字を覚えるため)。 */
+    private val onCommit: (String) -> Unit = {},
+) : EditorSink {
     override fun beginBatch() {
         connection()?.beginBatchEdit()
     }
@@ -28,6 +32,14 @@ class InputConnectionSink(private val connection: () -> InputConnection?) : Edit
 
     override fun commit(text: String) {
         connection()?.commitText(text, 1)
+        onCommit(text)
+    }
+
+    override fun commitInside(open: String, close: String) {
+        val ic = connection() ?: return
+        ic.commitText(open, 1)
+        // newCursorPosition が 0 以下なら、この文字の手前にカーソルが来る (= 間になる)
+        ic.commitText(close, 0)
     }
 
     override fun setComposing(text: String) {
