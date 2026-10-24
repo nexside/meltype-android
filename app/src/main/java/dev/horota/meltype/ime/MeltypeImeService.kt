@@ -37,6 +37,8 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     override val overlay: OverlayHost by lazy { OverlayHost(this) }
     private var overlayDialog: android.app.Dialog? = null
 
+    private fun diag(line: String) = dev.horota.meltype.settings.DiagLog.add(MeltypePrefs.dataDirectory(this), line)
+
     override fun ensureOverlay(): Boolean {
         val existing = overlayDialog
         if (existing != null && existing.isShowing) return true
@@ -67,9 +69,11 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             )
             d.show()
             overlayDialog = d
+            diag("overlay dialog shown token=${params.token != null} attached=${overlay.isAttachedToWindow}")
             true
         } catch (e: RuntimeException) {
             overlayDialog = null
+            diag("overlay dialog FAILED: $e")
             false
         }
     }
@@ -118,7 +122,8 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     private val display = object : CandidateDisplay {
         override fun show(view: CompositionView, inlineReading: Boolean) {
-            floating.show(view, inlineReading)
+            val ok = floating.show(view, inlineReading)
+            diag("candidates show ok=$ok text='${view.text}' cands=${view.candidates.size} inline=$inlineReading anchor=${composingAnchor()}")
         }
 
         override fun hide() {
@@ -302,10 +307,10 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         run { // 診断 (表示されない原因の調査用。あとで外す)
             val loc = IntArray(2)
             overlay.getLocationOnScreen(loc)
+            diag("indicator '$text' shown=$shown attached=${overlay.isAttachedToWindow} host=${overlay.width}x${overlay.height}@${loc[0]},${loc[1]} place=$x,$y,${w}x$h anchor=${anchor?.let { "${it.x.toInt()},${it.top.toInt()}-${it.bottom.toInt()}" }}")
             val note = "診断 shown=$shown attached=${overlay.isAttachedToWindow} host=${overlay.width}x${overlay.height}@${loc[0]},${loc[1]} " +
                 "vis=${overlay.isShown} place=$x,$y,${w}x$h anchor=${anchor?.let { "${it.x.toInt()},${it.top.toInt()}-${it.bottom.toInt()}" }} " +
                 "label=${indicatorLabel.left},${indicatorLabel.top},${indicatorLabel.width}x${indicatorLabel.height} screen=${metrics.widthPixels}x${metrics.heightPixels}"
-            android.widget.Toast.makeText(this, note, android.widget.Toast.LENGTH_LONG).show()
         }
         if (!shown) {
             // 窓を出せない端末・入力欄では、システムの短い通知で知らせる
@@ -347,6 +352,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        diag("onStartInput pkg=${attribute.packageName} inputView=$isInputViewShown")
         reloadIfUserDictionaryChanged()
         controller.options = prefs.bindingOptions
         controller.cursorBetweenBrackets = prefs.cursorBetweenBrackets

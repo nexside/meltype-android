@@ -27,6 +27,7 @@
         </activity>
         <activity android:name=".settings.UserDictionaryActivity" android:exported="false" />
         <activity android:name=".settings.GenreDictionaryActivity" android:exported="false" />
+        <activity android:name=".settings.DiagLogActivity" android:exported="false" />
         <activity
             android:name=".settings.WordRegisterActivity"
             android:exported="false"

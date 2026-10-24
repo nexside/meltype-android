@@ -82,6 +82,7 @@ class SettingsActivity : Activity() {
         root.addView(button("学習データを消す") { confirmClearLearning() })
 
         root.addView(heading("このアプリについて"))
+        root.addView(button("診断ログ (表示の不具合の調査用)") { startActivity(Intent(this, DiagLogActivity::class.java)) })
         root.addView(button("ライセンス") { showNotices() })
 
         setContentView(ScrollView(this).apply { addView(root) })
