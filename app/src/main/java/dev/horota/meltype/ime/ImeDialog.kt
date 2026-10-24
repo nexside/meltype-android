@@ -62,7 +62,10 @@ class ImeDialog(
         params.token = service.window.window?.attributes?.token
         params.type = WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG
         params.gravity = Gravity.TOP or Gravity.START
+        // ダイアログの既定の「後ろを暗くする」を切る (画面全体が黒くなるのを防ぐ)
+        params.dimAmount = 0f
         window.attributes = params
+        window.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
         window.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
         // 入力欄からフォーカスを奪わない。touchable ならタップは受ける (候補を選べるように)
         var flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
