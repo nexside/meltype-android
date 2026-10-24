@@ -16,6 +16,7 @@ import android.view.inputmethod.CursorAnchorInfo
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.widget.TextView
+import dev.horota.meltype.R
 import dev.horota.meltype.core.CompositionView
 import dev.horota.meltype.core.CoreBridge
 import dev.horota.meltype.core.CoreOpenResult
@@ -87,9 +88,25 @@ class MeltypeImeService : InputMethodService() {
                 InputMode.PAUSED -> "⏸"
                 InputMode.UNAVAILABLE -> "⚠"
             }
+            // 上のバーのアイコン (入力中だけ出る。onFinishInput で消す)
+            statusIcon(mode)
             val changed = last != null && last != text
             last = text
             if (changed) showIndicator(text, 1200)
+        }
+    }
+
+    private fun statusIcon(mode: InputMode) {
+        val icon = when (mode) {
+            InputMode.JAPANESE -> R.drawable.ic_mode_ja
+            InputMode.DIRECT -> R.drawable.ic_mode_en
+            InputMode.PAUSED -> R.drawable.ic_mode_paused
+            InputMode.UNAVAILABLE -> R.drawable.ic_mode_unavailable
+        }
+        try {
+            showStatusIcon(icon)
+        } catch (e: RuntimeException) {
+            // アイコンを出せなくても入力は続ける
         }
     }
 
@@ -286,6 +303,7 @@ class MeltypeImeService : InputMethodService() {
     }
 
     override fun onFinishInput() {
+        hideStatusIcon()
         emojiPanel.hide()
         floating.hide()
         dismissIndicator()
@@ -307,6 +325,7 @@ class MeltypeImeService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        hideStatusIcon()
         emojiPanel.hide()
         floating.hide()
         dismissIndicator()
