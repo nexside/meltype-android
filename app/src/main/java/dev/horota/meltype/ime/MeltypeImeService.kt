@@ -42,6 +42,15 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     override fun ensureOverlay(): Boolean {
         val existing = overlayDialog
         if (existing != null && existing.isShowing) return true
+        // 入力の窓が出ていないと、窓を付けられない (物理キーボードがあるとここが出ないことが多い)。出すよう頼む
+        if (!isInputViewShown) {
+            diag("input window not shown; requesting explicit show")
+            try {
+                requestShowSelf(SHOW_EXPLICIT)
+            } catch (e: RuntimeException) {
+                diag("requestShowSelf failed: $e")
+            }
+        }
         return try {
             (overlay.parent as? ViewGroup)?.removeView(overlay)
             val d = android.app.Dialog(this)
@@ -71,7 +80,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             overlayDialog = d
             diag("overlay dialog shown token=${params.token != null} attached=${overlay.isAttachedToWindow}")
             true
-        } catch (e: RuntimeException) {
+        } catch (e: Throwable) {
             overlayDialog = null
             diag("overlay dialog FAILED: $e")
             false
@@ -341,6 +350,17 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
+    override fun onWindowHidden() {
+        super.onWindowHidden()
+        try {
+            overlay.removeAllViews()
+            overlayDialog?.dismiss()
+        } catch (e: Throwable) {
+            // 窓がもう無いときは何もしない
+        }
+        overlayDialog = null
+    }
+
     /** 入力の窓は 1px で何も見せないので、アプリの画面を押し上げたり縮めたりしない。 */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
@@ -353,6 +373,13 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         diag("onStartInput pkg=${attribute.packageName} inputView=$isInputViewShown")
+        if (!isInputViewShown && !attribute.packageName.isNullOrEmpty()) {
+            try {
+                requestShowSelf(SHOW_EXPLICIT) // 物理キーボードがあっても入力の窓を出す (表示物を付けるために必要)
+            } catch (e: RuntimeException) {
+                diag("requestShowSelf failed: $e")
+            }
+        }
         reloadIfUserDictionaryChanged()
         controller.options = prefs.bindingOptions
         controller.cursorBetweenBrackets = prefs.cursorBetweenBrackets
@@ -407,7 +434,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         val key = KeyInput(keyCode, event.getUnicodeChar(event.metaState), event.getUnicodeChar(0), event.metaState)
         if (controller.keyDown(key)) {
             // 入力欄をタップせずに打ち始めたときは、まだ窓が出ていない
-            if (!isInputViewShown) requestShowSelf(0)
+            if (!isInputViewShown) requestShowSelf(SHOW_EXPLICIT)
             return true
         }
         return super.onKeyDown(keyCode, event)
@@ -419,5 +446,8 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     private companion object {
         /** 「最近使った絵文字」に入れる、確定した文字の長さの上限 (旗や家族の絵文字は 10 文字を超えることがある)。 */
         const val MAX_EMOJI_LENGTH = 16
+
+        /** InputMethod.SHOW_EXPLICIT: 物理キーボードがあっても入力の窓を出すよう頼む。 */
+        const val SHOW_EXPLICIT = 1
     }
 }
