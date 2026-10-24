@@ -314,4 +314,64 @@ class ImeControllerTest {
 
         assertEquals("きょう", controller.lastReading)
     }
+
+    @Test
+    fun questionMarkIsOfferedAfterACommittedQuestion() {
+        controller.startInput(text)
+        editor.before = "明日行きますか"
+        core.next = SessionResult(consumed = true)
+        controller.keyDown(letter('a'))
+        assertTrue(editor.ops.contains("show:？"))
+    }
+
+    @Test
+    fun questionMarkIsNotOfferedForWordsThatJustEndWithKa() {
+        controller.startInput(text)
+        editor.before = "どこか"
+        core.next = SessionResult(consumed = true)
+        controller.keyDown(letter('a'))
+        assertFalse(editor.ops.contains("show:？"))
+    }
+
+    @Test
+    fun spaceInsertsTheQuestionMarkAndDoesNotSendTheKeyToCore() {
+        controller.startInput(text)
+        editor.before = "そうかな"
+        core.next = SessionResult(consumed = true)
+        controller.keyDown(letter('a'))
+        editor.ops.clear()
+        core.calls.clear()
+
+        assertTrue(controller.keyDown(KeyInput(KeyEvent.KEYCODE_SPACE, ' '.code, ' '.code, 0)))
+
+        assertTrue("commit:？" in editor.ops)
+        assertTrue("forget" in core.calls)
+        assertFalse(core.calls.any { it.startsWith("key:") })
+    }
+
+    @Test
+    fun anotherLetterDismissesTheQuestionMark() {
+        controller.startInput(text)
+        editor.before = "明日行きますか"
+        core.next = SessionResult(consumed = true)
+        controller.keyDown(letter('a'))
+        editor.ops.clear()
+        core.calls.clear()
+        editor.before = "明日行きますか"
+
+        assertTrue(controller.keyDown(letter('b')))
+
+        assertFalse("commit:？" in editor.ops)
+        assertTrue(core.calls.any { it.startsWith("key:") })
+    }
+
+    @Test
+    fun questionMarkIsNotOfferedWhileComposing() {
+        controller.startInput(text)
+        editor.before = "明日行きますか"
+        core.next = SessionResult(true, emptyList(), CompositionView(text = "あ", candidates = listOf("あ")))
+        controller.keyDown(letter('a'))
+        assertTrue(editor.ops.contains("show:あ"))
+        assertFalse(editor.ops.contains("show:？"))
+    }
 }

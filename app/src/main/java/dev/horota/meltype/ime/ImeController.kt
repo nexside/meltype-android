@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.horota.meltype.ime
 
+import dev.horota.meltype.core.CompositionView
 import dev.horota.meltype.core.CoreApi
 import dev.horota.meltype.input.BindingAction
 import dev.horota.meltype.input.BindingOptions
@@ -42,6 +43,9 @@ class ImeController(
     /** Meltype が使った KeyDown。対応する KeyUp もアプリに渡さない。 */
     private val consumedDown = mutableSetOf<Int>()
 
+    /** 確定済みの文に出す「？」。自動では入れない。null なら出していない。 */
+    private var punctuation: String? = null
+
     var options: BindingOptions = BindingOptions()
 
     /** 確定した文字がかっこの組なら、カーソルを間に置く。 */
@@ -78,6 +82,7 @@ class ImeController(
     fun startInput(policy: FieldPolicy) {
         this.policy = policy
         applier.reset()
+        hidePunctuation()
         applier.inlineReading = !policy.surroundingText
         consumedDown.clear()
         // 周りの文字を返せない入力欄では、確定済みの文字を確かめて消せないので、確定し直しをさせない
@@ -117,15 +122,29 @@ class ImeController(
             display.hide()
         } else if (!selfEdit) {
             api.forgetLastCommit()
+            hidePunctuation()
         }
     }
 
     fun keyDown(key: KeyInput): Boolean {
         val binding = KeyBindings.match(key.keyCode, key.metaState, options)
-        if (binding == BindingAction.TogglePause) return consume(key.keyCode) { togglePause() }
+        if (binding == BindingAction.TogglePause) {
+            hidePunctuation()
+            return consume(key.keyCode) { togglePause() }
+        }
         val api = core ?: return false
-        if (paused || policy.bypass) return false
-        if (binding != null) return consume(key.keyCode) { handle(binding, api) }
+        if (paused || policy.bypass) {
+            hidePunctuation()
+            return false
+        }
+        if (binding != null) {
+            hidePunctuation()
+            return consume(key.keyCode) { handle(binding, api) }
+        }
+        if (punctuation != null && PunctuationPrediction.accepts(key)) {
+            return consume(key.keyCode) { acceptPunctuation() }
+        }
+        hidePunctuation()
 
         val normalized = KeyNormalizer.normalize(key) ?: return false
         // 入力中と、周りの文字を返せない入力欄では渡さない (Core が自分で覚えている行を使う)
@@ -134,6 +153,7 @@ class ImeController(
         val after = if (readSurrounding) sink.textAfterCursor(SURROUNDING_LENGTH) else null
         val result = api.handleKey(normalized.vk, normalized.ch, normalized.modifiers, before, after) ?: return false
         applier.apply(result)
+        if (result.view == null) refreshPunctuation() else punctuation = null
         if (result.consumed) consumedDown += key.keyCode
         return result.consumed
     }
@@ -141,6 +161,10 @@ class ImeController(
     fun keyUp(keyCode: Int): Boolean = consumedDown.remove(keyCode)
 
     fun selectCandidate(index: Int) {
+        if (punctuation != null) {
+            acceptPunctuation()
+            return
+        }
         core?.selectCandidate(index)?.let(applier::apply)
     }
 
@@ -189,5 +213,44 @@ class ImeController(
 
     private fun commitPending() {
         core?.commit()?.let(applier::apply)
+        hidePunctuation()
+    }
+
+    /** 変換が終わったあと、前文が疑問なら「？」だけを候補にする。 */
+    private fun refreshPunctuation() {
+        if (applier.composing || paused || direct || policy.bypass || policy.codeInput || !policy.surroundingText) {
+            hidePunctuation()
+            return
+        }
+        val mark = PunctuationPrediction.questionMark(
+            sink.textBeforeCursor(SURROUNDING_LENGTH),
+            sink.textAfterCursor(SURROUNDING_LENGTH),
+        )
+        if (mark == null) {
+            hidePunctuation()
+            return
+        }
+        punctuation = mark
+        display.show(CompositionView(candidates = listOf(mark)), inlineReading = false)
+    }
+
+    private fun acceptPunctuation() {
+        val mark = punctuation ?: return
+        punctuation = null
+        sink.beginBatch()
+        try {
+            sink.commit(mark)
+        } finally {
+            sink.endBatch()
+        }
+        display.hide()
+        // 入れた「？」を、次の語の文脈で Core が消さないようにする
+        core?.forgetLastCommit()
+    }
+
+    private fun hidePunctuation() {
+        if (punctuation == null) return
+        punctuation = null
+        if (!applier.composing) display.hide()
     }
 }
