@@ -22,6 +22,13 @@ android {
     }
 
     signingConfigs {
+        // フォークのデバッグ APK は毎回同じ鍵で署名する (アンインストールせずに上書きインストールできる)
+        getByName("debug") {
+            storeFile = file("fork-debug.keystore")
+            storePassword = "android"
+            keyAlias = "forkdebug"
+            keyPassword = "android"
+        }
         create("release") {
             val keystore = System.getenv("MELTYPE_KEYSTORE")
             if (keystore != null) {
