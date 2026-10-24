@@ -31,9 +31,10 @@ class UserDictionaryActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        genre = intent.getStringExtra(EXTRA_GENRE)
-        file = if (genre != null) GenreStore(this).userGenreFile(genre) else File(MeltypePrefs.dataDirectory(this), "userdict.txt")
-        title = genre?.let { "ジャンル: $it" } ?: "ユーザー辞書"
+        val genreName = intent.getStringExtra(EXTRA_GENRE)
+        genre = genreName
+        file = if (genreName != null) GenreStore(this).userGenreFile(genreName) else File(MeltypePrefs.dataDirectory(this), "userdict.txt")
+        title = if (genreName != null) "ジャンル: $genreName" else "ユーザー辞書"
 
         count = TextView(this)
         result = TextView(this).apply { gravity = Gravity.START }
