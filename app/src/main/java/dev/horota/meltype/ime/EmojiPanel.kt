@@ -45,7 +45,7 @@ class EmojiPanel(
         )
         addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(CELL_DP * VISIBLE_ROWS)))
     }
-    private val window = ImeDialog({ (service as OverlayOwner).overlay }, root, touchable = true)
+    private val window = ImeDialog({ service as OverlayOwner }, root, touchable = true)
 
     val isShowing: Boolean
         get() = state != null

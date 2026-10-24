@@ -43,6 +43,9 @@ class OverlayHost(context: Context) : FrameLayout(context) {
         if (view.parent === this) removeView(view)
     }
 
+    val isEmpty: Boolean
+        get() = entries.isEmpty()
+
     /** 触れる子 View の範囲 (この窓の座標) を region に入れる。 */
     fun fillTouchableRegion(region: Region) {
         region.setEmpty()
@@ -76,4 +79,10 @@ class OverlayHost(context: Context) : FrameLayout(context) {
 /** OverlayHost を持っている入力メソッド。 */
 interface OverlayOwner {
     val overlay: OverlayHost
+
+    /** overlay を載せた全画面の透明な窓を出す。出せなければ false。 */
+    fun ensureOverlay(): Boolean
+
+    /** 何も表示していなければ窓を閉じる。 */
+    fun releaseOverlayIfEmpty()
 }

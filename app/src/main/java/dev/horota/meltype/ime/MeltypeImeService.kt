@@ -35,6 +35,54 @@ import java.io.File
  */
 class MeltypeImeService : InputMethodService(), OverlayOwner {
     override val overlay: OverlayHost by lazy { OverlayHost(this) }
+    private var overlayDialog: android.app.Dialog? = null
+
+    override fun ensureOverlay(): Boolean {
+        val existing = overlayDialog
+        if (existing != null && existing.isShowing) return true
+        return try {
+            (overlay.parent as? ViewGroup)?.removeView(overlay)
+            val d = android.app.Dialog(this)
+            d.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+            d.setContentView(overlay)
+            val w = d.window ?: return false
+            val params = w.attributes
+            params.token = window.window?.attributes?.token
+            params.type = android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG
+            params.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            params.x = 0
+            params.y = 0
+            params.width = ViewGroup.LayoutParams.MATCH_PARENT
+            params.height = ViewGroup.LayoutParams.MATCH_PARENT
+            params.dimAmount = 0f
+            w.attributes = params
+            w.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+            w.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            w.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            )
+            d.show()
+            overlayDialog = d
+            true
+        } catch (e: RuntimeException) {
+            overlayDialog = null
+            false
+        }
+    }
+
+    override fun releaseOverlayIfEmpty() {
+        if (!overlay.isEmpty) return
+        try {
+            overlayDialog?.dismiss()
+        } catch (e: RuntimeException) {
+            // 窓がもう無いときは何もしない
+        }
+        overlayDialog = null
+    }
     private lateinit var prefs: MeltypePrefs
     private lateinit var controller: ImeController
     private var core: CoreBridge? = null
@@ -65,7 +113,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             }
         }
     }
-    private val indicatorWindow by lazy { ImeDialog({ overlay }, indicatorLabel, touchable = false) }
+    private val indicatorWindow by lazy { ImeDialog({ this }, indicatorLabel, touchable = false) }
     private val hideIndicator = Runnable { indicatorWindow.dismiss() }
 
     private val display = object : CandidateDisplay {
@@ -277,13 +325,8 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
     /** 1px の透明な窓。候補は浮かべる窓に出すので、画面の下にバーは出さない。 */
-    override fun onCreateInputView(): View {
-        // 入力の窓は画面全体の大きさ。背景が不透明だとアプリの画面が隠れるので、完全に透明にする
-        window.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-        (overlay.parent as? ViewGroup)?.removeView(overlay)
-        overlay.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, resources.displayMetrics.heightPixels)
-        return overlay
-    }
+    override fun onCreateInputView(): View =
+        View(this).apply { layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1) }
 
     /** 物理キーボードがあっても入力用の窓を出す (既定では物理キーボードがあると出さない)。パスワード欄などでは出さない。 */
     override fun onEvaluateInputViewShown(): Boolean {
@@ -293,11 +336,6 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     override fun onEvaluateFullscreenMode(): Boolean = false
 
-    override fun onWindowShown() {
-        super.onWindowShown()
-        window.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
-    }
-
     /** 入力の窓は 1px で何も見せないので、アプリの画面を押し上げたり縮めたりしない。 */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
@@ -305,9 +343,6 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         if (bottom <= 0) return
         outInsets.contentTopInsets = bottom
         outInsets.visibleTopInsets = bottom
-        // 触れるのは浮かべた表示の範囲だけ。ほかのタップは下のアプリへ
-        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
-        overlay.fillTouchableRegion(outInsets.touchableRegion)
     }
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
