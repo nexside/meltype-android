@@ -58,7 +58,13 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             d.setContentView(overlay)
             val w = d.window ?: return false
             val params = w.attributes
-            params.token = window.window?.attributes?.token
+            // 付ける先は入力の窓の View の窓トークン (PopupWindow と同じ)。入力の窓の中のトークンではない
+            val parentToken = window.window?.decorView?.windowToken
+            if (parentToken == null) {
+                diag("overlay: IME decor has no window token yet")
+                return false
+            }
+            params.token = parentToken
             params.type = android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG
             params.gravity = android.view.Gravity.TOP or android.view.Gravity.START
             params.x = 0
