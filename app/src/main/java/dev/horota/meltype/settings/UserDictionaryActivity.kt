@@ -193,7 +193,7 @@ class UserDictionaryActivity : Activity() {
         setPadding(0, 32, 0, 8)
     }
 
-    private companion object {
+    companion object {
         const val EXTRA_GENRE = "genre"
         const val REQUEST_PICK = 1
         const val MAX_SHOWN_LINES = 10

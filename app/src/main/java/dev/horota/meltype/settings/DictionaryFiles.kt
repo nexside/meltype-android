@@ -3,7 +3,7 @@ package dev.horota.meltype.settings
 
 import java.io.File
 
-/** 本家 Core が入力欄を作るときに読む辞書のファイル (userdict.txt と dictionaries/*.plist) の変化を見分ける。 */
+/** 本家 Core が入力欄を作るときに読む辞書のファイル (userdict.txt と dictionaries フォルダの .plist) の変化を見分ける。 */
 object DictionaryFiles {
     /** 辞書のファイルが変わると値が変わる。IME はこれが変わったら、入力の本体を作り直して辞書を読み直す。 */
     fun stamp(dataDirectory: File): Long {
