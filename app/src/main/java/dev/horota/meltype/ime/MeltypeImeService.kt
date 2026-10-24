@@ -278,6 +278,8 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     /** 1px の透明な窓。候補は浮かべる窓に出すので、画面の下にバーは出さない。 */
     override fun onCreateInputView(): View {
+        // 入力の窓は画面全体の大きさ。背景が不透明だとアプリの画面が隠れるので、完全に透明にする
+        window.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
         (overlay.parent as? ViewGroup)?.removeView(overlay)
         overlay.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, resources.displayMetrics.heightPixels)
         return overlay
@@ -290,6 +292,11 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
+
+    override fun onWindowShown() {
+        super.onWindowShown()
+        window.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(Color.TRANSPARENT))
+    }
 
     /** 入力の窓は 1px で何も見せないので、アプリの画面を押し上げたり縮めたりしない。 */
     override fun onComputeInsets(outInsets: Insets) {
