@@ -33,7 +33,8 @@ import java.io.File
  * Android 11 以降は、表示を頼まれていない IME の窓は見えないので、1px の入力用の窓 (input view) を出し、
  * 文字を打ち始めたら自分で表示を頼む (requestShowSelf)。
  */
-class MeltypeImeService : InputMethodService() {
+class MeltypeImeService : InputMethodService() (), OverlayOwner {
+    override val overlay: OverlayHost by lazy { OverlayHost(this) }
     private lateinit var prefs: MeltypePrefs
     private lateinit var controller: ImeController
     private var core: CoreBridge? = null
@@ -64,7 +65,7 @@ class MeltypeImeService : InputMethodService() {
             }
         }
     }
-    private val indicatorWindow by lazy { ImeDialog(this, indicatorLabel, touchable = false) }
+    private val indicatorWindow by lazy { ImeDialog({ overlay }, indicatorLabel, touchable = false) }
     private val hideIndicator = Runnable { indicatorWindow.dismiss() }
 
     private val display = object : CandidateDisplay {
@@ -267,8 +268,11 @@ class MeltypeImeService : InputMethodService() {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
     /** 1px の透明な窓。候補は浮かべる窓に出すので、画面の下にバーは出さない。 */
-    override fun onCreateInputView(): View =
-        View(this).apply { layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1) }
+    override fun onCreateInputView(): View {
+        (overlay.parent as? ViewGroup)?.removeView(overlay)
+        overlay.layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, resources.displayMetrics.heightPixels)
+        return overlay
+    }
 
     /** 物理キーボードがあっても入力用の窓を出す (既定では物理キーボードがあると出さない)。パスワード欄などでは出さない。 */
     override fun onEvaluateInputViewShown(): Boolean {
@@ -285,6 +289,9 @@ class MeltypeImeService : InputMethodService() {
         if (bottom <= 0) return
         outInsets.contentTopInsets = bottom
         outInsets.visibleTopInsets = bottom
+        // 触れるのは浮かべた表示の範囲だけ。ほかのタップは下のアプリへ
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+        overlay.fillTouchableRegion(outInsets.touchableRegion)
     }
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {

@@ -65,7 +65,7 @@ class FloatingCandidates(
         addView(registerButton)
     }
 
-    private val window = ImeDialog(service, row, touchable = true)
+    private val window = ImeDialog({ (service as OverlayOwner).overlay }, row, touchable = true)
 
     /** 候補を出す。出す物が無ければ窓を閉じる。窓を出せなかったら false。 */
     fun show(view: CompositionView, inlineReading: Boolean): Boolean {
