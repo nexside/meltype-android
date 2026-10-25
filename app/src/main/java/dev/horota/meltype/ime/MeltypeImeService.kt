@@ -11,6 +11,7 @@ import android.os.Looper
 import android.util.TypedValue
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.view.inputmethod.CursorAnchorInfo
 import android.view.inputmethod.EditorInfo
@@ -456,6 +457,8 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     }
 
     override fun onFinishInput() {
+        cancelZeroHold()
+        if (voice != null) voice?.stop()
         hideSymbolLegend()
         if (::digitPad.isInitialized) digitPad.hide()
         hideStatusIcon()
@@ -485,6 +488,8 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         floating.hide()
         dismissIndicator()
         hideSymbolLegend()
+        cancelZeroHold()
+        if (voice != null) voice?.stop()
         controller.shutdown()
         core?.close()
         core = null
@@ -517,6 +522,72 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         symbolWindow.dismiss()
     }
 
+    private var q25ZeroHeld = false
+    private var q25ZeroLong = false
+    private var voice: VoiceInput? = null
+
+    private fun voiceInput(): VoiceInput = voice ?: VoiceInput(
+        this,
+        onText = { text ->
+            currentInputConnection?.finishComposingText()
+            currentInputConnection?.commitText(text, 1)
+            dismissIndicator()
+        },
+        onEnd = { reason ->
+            dismissIndicator()
+            when (reason) {
+                "permit" -> askForMicrophone()
+                "unavailable" -> showIndicator("音声なし", 1500)
+            }
+        },
+    ).also { voice = it }
+    private val zeroLongPress = Runnable {
+        if (!q25ZeroHeld) return@Runnable
+        q25ZeroLong = true
+        if (::controller.isInitialized && !controller.acceptsVoice) {
+            showIndicator("音声なし", 1200)
+            return@Runnable
+        }
+        if (voiceInput().start()) showIndicator("話して", 20000)
+    }
+
+    /** Q25 のスペース左の 0。短く押すと 0、押し続けると音声入力。変換中と修飾キー付きは対象にしない。 */
+    private fun isQ25Zero(event: KeyEvent): Boolean {
+        if (event.keyCode != KeyEvent.KEYCODE_0) return false
+        if (event.metaState and (KeyEvent.META_ALT_ON or KeyEvent.META_CTRL_ON or KeyEvent.META_META_ON) != 0) return false
+        if (::controller.isInitialized && controller.isComposing) return false
+        val name = event.device?.name ?: return false
+        return name.contains("Q25", ignoreCase = true)
+    }
+
+    private fun typeZero() {
+        val key = KeyInput(KeyEvent.KEYCODE_0, '0'.code, '0'.code, 0)
+        if (!::controller.isInitialized || !controller.keyDown(key)) {
+            currentInputConnection?.commitText("0", 1)
+        } else if (!isInputViewShown) {
+            try {
+                requestShowSelf(SHOW_EXPLICIT)
+            } catch (e: RuntimeException) {
+                diag("requestShowSelf failed: $e")
+            }
+        }
+        if (::controller.isInitialized) controller.keyUp(KeyEvent.KEYCODE_0)
+    }
+
+    private fun askForMicrophone() {
+        try {
+            startActivity(Intent(this, MicPermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: RuntimeException) {
+            showIndicator("マイク", 1500)
+        }
+    }
+
+    private fun cancelZeroHold() {
+        handler.removeCallbacks(zeroLongPress)
+        q25ZeroHeld = false
+        q25ZeroLong = false
+    }
+
     private fun isQ25Alt(event: KeyEvent): Boolean {
         if (event.keyCode != KeyEvent.KEYCODE_ALT_LEFT && event.keyCode != KeyEvent.KEYCODE_ALT_RIGHT) return false
         val name = event.device?.name ?: return false
@@ -529,6 +600,15 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             return true
         }
         if (isQ25Alt(event)) showSymbolLegend()
+        if (isQ25Zero(event)) {
+            if (event.repeatCount == 0) {
+                q25ZeroHeld = true
+                q25ZeroLong = false
+                handler.removeCallbacks(zeroLongPress)
+                handler.postDelayed(zeroLongPress, ViewConfiguration.getLongPressTimeout().toLong())
+            }
+            return true
+        }
         val key = KeyInput(keyCode, event.getUnicodeChar(event.metaState), event.getUnicodeChar(0), event.metaState)
         if (controller.keyDown(key)) {
             // 入力欄をタップせずに打ち始めたときは、まだ窓が出ていない
@@ -540,6 +620,14 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_ALT_LEFT || event.keyCode == KeyEvent.KEYCODE_ALT_RIGHT) hideSymbolLegend()
+        if (q25ZeroHeld && event.keyCode == KeyEvent.KEYCODE_0) {
+            handler.removeCallbacks(zeroLongPress)
+            val wasLong = q25ZeroLong
+            q25ZeroHeld = false
+            q25ZeroLong = false
+            if (!wasLong) typeZero()
+            return true
+        }
         return panelConsumed.remove(keyCode) || controller.keyUp(keyCode) || super.onKeyUp(keyCode, event)
     }
 

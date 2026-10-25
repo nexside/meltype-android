@@ -85,6 +85,13 @@ class ImeController(
     val digitPadKind: DigitPadKind
         get() = policy.digitPad
 
+    val isComposing: Boolean
+        get() = applier.composing
+
+    /** パスワード欄と一時停止中は音声入力を出さない。 */
+    val acceptsVoice: Boolean
+        get() = !paused && !policy.bypass
+
     val mode: InputMode
         get() = when {
             core == null -> InputMode.UNAVAILABLE
