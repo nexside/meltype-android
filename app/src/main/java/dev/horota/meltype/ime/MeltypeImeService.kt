@@ -612,6 +612,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         this,
         onText = { text ->
             handler.post {
+                hideSpeakIcon()
                 dismissIndicator()
                 val connection = currentInputConnection
                 if (connection != null) {
@@ -624,6 +625,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         },
         onEnd = { reason ->
             handler.post {
+                hideSpeakIcon()
                 dismissIndicator()
                 when (reason) {
                     "permit" -> askForMicrophone()
@@ -633,11 +635,27 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         },
     ).also { voice = it }
 
+    private val speakIcon by lazy { SpeakIcon(this) }
+    private val speakWindow by lazy { ImeDialog({ this }, speakIcon, touchable = false) }
+
+    private fun showSpeakIcon() {
+        val metrics = resources.displayMetrics
+        val size = dp(180)
+        val x = (metrics.widthPixels - size) / 2
+        val y = (metrics.heightPixels - size) / 3
+        speakWindow.show(x.coerceAtLeast(0), y.coerceAtLeast(0), size, size)
+    }
+
+    private fun hideSpeakIcon() {
+        speakWindow.dismiss()
+    }
+
     private fun beginVoice() {
-        if (voiceSession().start()) showIndicator("話して", 20000)
+        if (voiceSession().start()) showSpeakIcon()
     }
 
     private fun endVoice() {
+        hideSpeakIcon()
         voice?.finish()
     }
 
@@ -680,6 +698,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         handler.removeCallbacks(zeroTap)
         handler.removeCallbacks(micRelease)
         voice?.cancel()
+        hideSpeakIcon()
         zeroStartedAt = 0L
         zeroVoiceFired = false
         zeroDown = false
