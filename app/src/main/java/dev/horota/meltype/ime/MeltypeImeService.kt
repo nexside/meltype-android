@@ -310,7 +310,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         return FloatingCandidates.Anchor(points[0], points[1], points[3])
     }
 
-    /** 小さな知らせ (「あ」/「A」・警告) を、入力カーソルのすぐ下に出す。位置が分からないときは画面の下の少し上。 */
+    /** 「あ」/「A」を、入力カーソルの上に出す。上が足りないときだけ下。画面の外には出さない。 */
     private fun showIndicator(text: String, millis: Long) {
         val metrics = resources.displayMetrics
         indicatorLabel.text = text
@@ -323,7 +323,8 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         val h = indicatorLabel.measuredHeight + dp(6)
         val anchor = composingAnchor()
         val x = if (anchor != null) anchor.x.toInt().coerceIn(0, maxOf(0, metrics.widthPixels - w)) else maxOf(0, (metrics.widthPixels - w) / 2)
-        val y = if (anchor != null) anchor.bottom.toInt() + dp(4) else maxOf(0, metrics.heightPixels - h - dp(64))
+        // 入力欄が画面の一番下だと、カーソルの下は画面の外。収まる側 (ふつうは上) に出す
+        val y = indicatorY(anchor, h, metrics.heightPixels)
         val shown = indicatorWindow.show(x, y, w, h)
         run { // 診断 (表示されない原因の調査用。あとで外す)
             val loc = IntArray(2)
@@ -340,6 +341,29 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         }
         handler.removeCallbacks(hideIndicator)
         handler.postDelayed(hideIndicator, millis)
+    }
+
+    /** 画面の下をふさがっている高さ (Alt の刻印、数字行)。 */
+    private fun coveredBottom(): Int {
+        var cover = 0
+        if (symbolLegend.parent != null) {
+            cover = maxOf(cover, symbolLegend.height.takeIf { it > 0 } ?: symbolLegend.measuredHeight)
+        }
+        if (::digitPad.isInitialized && digitPad.isActive) cover = maxOf(cover, digitPad.height)
+        return cover
+    }
+
+    /** 「あ」/「A」が画面の外や、下の表示に隠れない位置。 */
+    private fun indicatorY(anchor: FloatingCandidates.Anchor?, h: Int, screenH: Int): Int {
+        val margin = dp(8)
+        val floor = screenH - coveredBottom() - margin
+        if (anchor != null) {
+            val above = anchor.top.toInt() - h - dp(4)
+            val below = anchor.bottom.toInt() + dp(4)
+            if (above >= margin) return above
+            if (below + h <= floor) return below
+        }
+        return (floor - h).coerceAtLeast(margin)
     }
 
     private fun dismissIndicator() {
