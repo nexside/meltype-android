@@ -126,16 +126,16 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     private val indicatorLabel by lazy {
         TextView(this).apply {
             // 「あ」は A より上下左右にはみ出す。枠ぴったりだと切れるので、余白と最小サイズを多めに取る
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 26f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
             setTextColor(Color.WHITE)
             gravity = android.view.Gravity.CENTER
             includeFontPadding = true
-            setPadding(dp(18), dp(12), dp(18), dp(12))
-            minWidth = dp(68)
-            minHeight = dp(60)
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            minWidth = dp(52)
+            minHeight = dp(44)
             background = GradientDrawable().apply {
                 setColor(Color.argb(0xE6, 0x33, 0x33, 0x33))
-                cornerRadius = dp(10).toFloat()
+                cornerRadius = dp(8).toFloat()
             }
         }
     }
