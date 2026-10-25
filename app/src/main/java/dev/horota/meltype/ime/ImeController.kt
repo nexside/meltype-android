@@ -4,6 +4,7 @@ package dev.horota.meltype.ime
 import dev.horota.meltype.core.CompositionView
 import dev.horota.meltype.core.CoreApi
 import dev.horota.meltype.input.BindingAction
+import dev.horota.meltype.input.DigitPadKind
 import dev.horota.meltype.input.BindingOptions
 import dev.horota.meltype.input.FieldPolicy
 import dev.horota.meltype.input.KeyBindings
@@ -70,6 +71,13 @@ class ImeController(
     /** 候補バーを出すか。Meltype を通さない入力欄 (パスワードなど) では出さない。 */
     val showsBar: Boolean
         get() = !policy.bypass
+
+    /** 入力の窓を出すか。数字行は、変換を通さない暗証番号欄でも出す。 */
+    val showsWindow: Boolean
+        get() = showsBar || policy.digitPad != DigitPadKind.NONE
+
+    val digitPadKind: DigitPadKind
+        get() = policy.digitPad
 
     val mode: InputMode
         get() = when {

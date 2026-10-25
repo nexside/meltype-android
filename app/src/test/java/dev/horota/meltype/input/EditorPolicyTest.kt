@@ -21,7 +21,10 @@ class EditorPolicyTest {
         assertEquals(bypass, of(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD))
         assertEquals(bypass, of(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD))
         assertEquals(bypass, of(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD))
-        assertEquals(bypass, of(InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD))
+        assertEquals(
+            FieldPolicy(bypass = true, startDirect = true, codeInput = false, noLearning = true, digitPad = DigitPadKind.DIGITS),
+            of(InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_VARIATION_PASSWORD),
+        )
     }
 
     @Test
@@ -30,9 +33,15 @@ class EditorPolicyTest {
         assertEquals(direct, of(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI))
         assertEquals(direct, of(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS))
         assertEquals(direct, of(InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS))
-        assertEquals(direct, of(InputType.TYPE_CLASS_NUMBER))
-        assertEquals(direct, of(InputType.TYPE_CLASS_PHONE))
-        assertEquals(direct, of(InputType.TYPE_CLASS_DATETIME))
+    }
+
+    @Test
+    fun numbersGetADigitRowAndAreNotLearned() {
+        val digits = FieldPolicy(bypass = false, startDirect = true, codeInput = false, noLearning = true, digitPad = DigitPadKind.DIGITS)
+        assertEquals(digits, of(InputType.TYPE_CLASS_NUMBER))
+        assertEquals(digits, of(InputType.TYPE_CLASS_DATETIME))
+        assertEquals(digits.copy(digitPad = DigitPadKind.DECIMAL), of(InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL))
+        assertEquals(digits.copy(digitPad = DigitPadKind.PHONE), of(InputType.TYPE_CLASS_PHONE))
     }
 
     @Test

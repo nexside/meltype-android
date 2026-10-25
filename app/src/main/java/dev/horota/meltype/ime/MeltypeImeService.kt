@@ -347,17 +347,40 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         indicatorWindow.dismiss()
     }
 
+    private fun syncDigitPad() {
+        if (!::digitPad.isInitialized || !::controller.isInitialized) return
+        digitPad.setKind(controller.digitPadKind)
+        digitPad.requestLayout()
+    }
+
+    /** 数字行から直接入れる。変換にも診断ログにも残さない。 */
+    private fun insertDigit(text: String) {
+        currentInputConnection?.commitText(text, 1)
+    }
+
+    private fun deleteDigitBeforeCursor() {
+        currentInputConnection?.deleteSurroundingText(1, 0)
+    }
+
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
-    /** 1px の透明な窓。候補は浮かべる窓に出すので、画面の下にバーは出さない。 */
-    override fun onCreateInputView(): View =
-        View(this).apply { layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1) }
+    private lateinit var digitPad: DigitPad
 
-    /** 物理キーボードがあっても入力用の窓を出す (既定では物理キーボードがあると出さない)。パスワード欄などでは出さない。 */
+    /**
+     * ふだんは 1px。数字欄のときだけ、画面の一番下に Q25 のキーと同じ数字行を出す。
+     * 候補はこれまでどおり浮かべる窓に出す。
+     */
+    override fun onCreateInputView(): View {
+        digitPad = DigitPad(this, ::insertDigit, ::deleteDigitBeforeCursor)
+        if (::controller.isInitialized) digitPad.setKind(controller.digitPadKind)
+        return digitPad
+    }
+
+    /** 物理キーボードがあっても入力用の窓を出す。文字のパスワード欄では出さない。暗証番号は数字行のために出す。 */
     override fun onEvaluateInputViewShown(): Boolean {
         super.onEvaluateInputViewShown()
-        return !::controller.isInitialized || controller.showsBar
+        return !::controller.isInitialized || controller.showsWindow
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
@@ -373,9 +396,10 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         overlayDialog = null
     }
 
-    /** 入力の窓は 1px で何も見せないので、アプリの画面を押し上げたり縮めたりしない。 */
+    /** 数字行が出ているときはその高さだけ画面を空ける。それ以外はアプリを押し上げない。 */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
+        if (::digitPad.isInitialized && digitPad.isActive) return
         val bottom = window.window?.decorView?.height ?: return
         if (bottom <= 0) return
         outInsets.contentTopInsets = bottom
@@ -398,6 +422,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         applyTheme()
         currentInputConnection?.requestCursorUpdates(InputConnection.CURSOR_UPDATE_MONITOR)
         controller.startInput(EditorPolicy.of(attribute.inputType, attribute.packageName, prefs.codeApps, attribute.imeOptions))
+        syncDigitPad()
         updateInputViewShown()
         startupNotice?.let {
             startupNotice = null
@@ -406,6 +431,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     }
 
     override fun onFinishInput() {
+        if (::digitPad.isInitialized) digitPad.hide()
         hideStatusIcon()
         emojiPanel.hide()
         floating.hide()
