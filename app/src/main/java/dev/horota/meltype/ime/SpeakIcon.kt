@@ -17,10 +17,12 @@ class SpeakIcon(context: Context) : View(context) {
     }
     private val box = RectF()
     private var phase = 0
-    private val tick = Runnable {
-        phase = (phase + 1) % 3
-        invalidate()
-        postDelayed(tick, 260)
+    private val tick: Runnable = object : Runnable {
+        override fun run() {
+            phase = (phase + 1) % 3
+            invalidate()
+            postDelayed(this, 260)
+        }
     }
 
     override fun onAttachedToWindow() {
