@@ -374,4 +374,44 @@ class ImeControllerTest {
         assertTrue(editor.ops.contains("show:あ"))
         assertFalse(editor.ops.contains("show:？"))
     }
+
+    @Test
+    fun backspaceRightAfterACommitRestoresTheReading() {
+        controller.startInput(text)
+        core.next = SessionResult(true, emptyList(), CompositionView(text = "きょう"))
+        controller.keyDown(letter('k'))
+        core.next = SessionResult(true, listOf(TextEdit(0, "今日")), null)
+        editor.before = "今日"
+        controller.keyDown(letter('a'))
+        editor.ops.clear()
+        core.calls.clear()
+        editor.before = "今日"
+
+        assertTrue(controller.keyDown(KeyInput(KeyEvent.KEYCODE_DEL, 0, 0, 0)))
+
+        assertTrue("delete:2" in editor.ops)
+        assertTrue("commit:きょう" in editor.ops)
+        assertTrue("forget" in core.calls)
+        assertFalse(core.calls.any { it.startsWith("key:") })
+    }
+
+    @Test
+    fun backspaceAfterAnotherKeyDeletesNormally() {
+        controller.startInput(text)
+        core.next = SessionResult(true, emptyList(), CompositionView(text = "きょう"))
+        controller.keyDown(letter('k'))
+        core.next = SessionResult(true, listOf(TextEdit(0, "今日")), null)
+        editor.before = "今日"
+        controller.keyDown(letter('a'))
+        core.next = SessionResult(consumed = true)
+        controller.keyDown(letter('b'))
+        editor.ops.clear()
+        core.calls.clear()
+        editor.before = "今日b"
+
+        assertTrue(controller.keyDown(KeyInput(KeyEvent.KEYCODE_DEL, 0, 0, 0)))
+
+        assertFalse("commit:きょう" in editor.ops)
+        assertTrue(core.calls.any { it.startsWith("key:") })
+    }
 }

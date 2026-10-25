@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package dev.horota.meltype.ime
 
+import android.view.KeyEvent
 import dev.horota.meltype.core.CompositionView
 import dev.horota.meltype.core.CoreApi
+import dev.horota.meltype.core.SessionResult
 import dev.horota.meltype.input.BindingAction
 import dev.horota.meltype.input.DigitPadKind
 import dev.horota.meltype.input.BindingOptions
@@ -46,6 +48,10 @@ class ImeController(
 
     /** 確定済みの文に出す「？」。自動では入れない。null なら出していない。 */
     private var punctuation: String? = null
+
+    /** 直前に確定した語。直後の Backspace だけで、読みに戻す。 */
+    private var undoText: String? = null
+    private var undoReading: String? = null
 
     var options: BindingOptions = BindingOptions()
 
@@ -91,6 +97,7 @@ class ImeController(
         this.policy = policy
         applier.reset()
         hidePunctuation()
+        clearUndo()
         applier.inlineReading = !policy.surroundingText
         consumedDown.clear()
         // 周りの文字を返せない入力欄では、確定済みの文字を確かめて消せないので、確定し直しをさせない
@@ -131,6 +138,7 @@ class ImeController(
         } else if (!selfEdit) {
             api.forgetLastCommit()
             hidePunctuation()
+            clearUndo()
         }
     }
 
@@ -138,13 +146,17 @@ class ImeController(
         val binding = KeyBindings.match(key.keyCode, key.metaState, options)
         if (binding == BindingAction.TogglePause) {
             hidePunctuation()
+            clearUndo()
             return consume(key.keyCode) { togglePause() }
         }
         val api = core ?: return false
         if (paused || policy.bypass) {
             hidePunctuation()
+            clearUndo()
             return false
         }
+        if (undoBackspace(key)) return consume(key.keyCode) { revertLastCommit() }
+        clearUndo()
         if (binding != null) {
             hidePunctuation()
             return consume(key.keyCode) { handle(binding, api) }
@@ -161,7 +173,13 @@ class ImeController(
         val after = if (readSurrounding) sink.textAfterCursor(SURROUNDING_LENGTH) else null
         val result = api.handleKey(normalized.vk, normalized.ch, normalized.modifiers, before, after) ?: return false
         applier.apply(result)
-        if (result.view == null) refreshPunctuation() else punctuation = null
+        if (result.view == null) {
+            refreshPunctuation()
+            rememberUndo(result)
+        } else {
+            punctuation = null
+            clearUndo()
+        }
         if (result.consumed) consumedDown += key.keyCode
         return result.consumed
     }
@@ -260,5 +278,47 @@ class ImeController(
         if (punctuation == null) return
         punctuation = null
         if (!applier.composing) display.hide()
+    }
+
+    /** 変換で確定した直後だけ覚える。直接入力や、読みと同じ文字は戻さない。 */
+    private fun rememberUndo(result: SessionResult) {
+        if (direct || applier.composing || !policy.surroundingText) {
+            clearUndo()
+            return
+        }
+        val committed = result.commits.lastOrNull { it.text.isNotEmpty() }?.text
+        val reading = applier.lastReading
+        if (committed != null && !reading.isNullOrEmpty() && reading != committed) {
+            undoText = committed
+            undoReading = reading
+        } else if (result.commits.isNotEmpty()) {
+            clearUndo()
+        }
+    }
+
+    private fun undoBackspace(key: KeyInput): Boolean {
+        if (undoText == null || key.keyCode != KeyEvent.KEYCODE_DEL) return false
+        if (key.metaState and (KeyEvent.META_ALT_ON or KeyEvent.META_CTRL_ON or KeyEvent.META_META_ON) != 0) return false
+        if (applier.composing) return false
+        return sink.textBeforeCursor(undoText!!.length) == undoText
+    }
+
+    private fun revertLastCommit() {
+        val committed = undoText ?: return
+        val reading = undoReading ?: return
+        clearUndo()
+        sink.beginBatch()
+        try {
+            sink.deleteBefore(committed.length)
+            sink.commit(reading)
+        } finally {
+            sink.endBatch()
+        }
+        core?.forgetLastCommit()
+    }
+
+    private fun clearUndo() {
+        undoText = null
+        undoReading = null
     }
 }

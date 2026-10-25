@@ -386,6 +386,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     override fun onEvaluateFullscreenMode(): Boolean = false
 
     override fun onWindowHidden() {
+        hideSymbolLegend()
         super.onWindowHidden()
         try {
             overlay.removeAllViews()
@@ -431,6 +432,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
     }
 
     override fun onFinishInput() {
+        hideSymbolLegend()
         if (::digitPad.isInitialized) digitPad.hide()
         hideStatusIcon()
         emojiPanel.hide()
@@ -458,10 +460,43 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         emojiPanel.hide()
         floating.hide()
         dismissIndicator()
+        hideSymbolLegend()
         controller.shutdown()
         core?.close()
         core = null
         super.onDestroy()
+    }
+
+    private val symbolLegend by lazy { SymbolLegend(this) }
+    private val symbolWindow by lazy { ImeDialog({ this }, symbolLegend, touchable = false) }
+
+    private fun showSymbolLegend() {
+        val metrics = resources.displayMetrics
+        symbolLegend.measure(
+            View.MeasureSpec.makeMeasureSpec(metrics.widthPixels, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+        )
+        val w = symbolLegend.measuredWidth.coerceAtLeast(1)
+        val h = symbolLegend.measuredHeight.coerceAtLeast(1)
+        val y = (metrics.heightPixels - h).coerceAtLeast(0)
+        if (!isInputViewShown) {
+            try {
+                requestShowSelf(SHOW_EXPLICIT)
+            } catch (e: RuntimeException) {
+                diag("requestShowSelf failed: $e")
+            }
+        }
+        symbolWindow.show(0, y, w, h)
+    }
+
+    private fun hideSymbolLegend() {
+        symbolWindow.dismiss()
+    }
+
+    private fun isQ25Alt(event: KeyEvent): Boolean {
+        if (event.keyCode != KeyEvent.KEYCODE_ALT_LEFT && event.keyCode != KeyEvent.KEYCODE_ALT_RIGHT) return false
+        val name = event.device?.name ?: return false
+        return name.contains("Q25", ignoreCase = true)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -469,6 +504,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             panelConsumed += keyCode
             return true
         }
+        if (isQ25Alt(event)) showSymbolLegend()
         val key = KeyInput(keyCode, event.getUnicodeChar(event.metaState), event.getUnicodeChar(0), event.metaState)
         if (controller.keyDown(key)) {
             // 入力欄をタップせずに打ち始めたときは、まだ窓が出ていない
@@ -478,8 +514,10 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         return super.onKeyDown(keyCode, event)
     }
 
-    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean =
-        panelConsumed.remove(keyCode) || controller.keyUp(keyCode) || super.onKeyUp(keyCode, event)
+    override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_ALT_LEFT || event.keyCode == KeyEvent.KEYCODE_ALT_RIGHT) hideSymbolLegend()
+        return panelConsumed.remove(keyCode) || controller.keyUp(keyCode) || super.onKeyUp(keyCode, event)
+    }
 
     private companion object {
         /** 「最近使った絵文字」に入れる、確定した文字の長さの上限 (旗や家族の絵文字は 10 文字を超えることがある)。 */
