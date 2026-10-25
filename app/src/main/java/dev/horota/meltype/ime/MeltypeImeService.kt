@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
@@ -454,11 +455,14 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             startupNotice = null
             showIndicator(it, 4000)
         }
+        pendingVoice?.let { text ->
+            pendingVoice = null
+            currentInputConnection?.commitText(text, 1)
+        }
     }
 
     override fun onFinishInput() {
         cancelZeroHold()
-        if (voice != null) voice?.stop()
         hideSymbolLegend()
         if (::digitPad.isInitialized) digitPad.hide()
         hideStatusIcon()
@@ -489,7 +493,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         dismissIndicator()
         hideSymbolLegend()
         cancelZeroHold()
-        if (voice != null) voice?.stop()
+        VoiceBus.listener = null
         controller.shutdown()
         core?.close()
         core = null
@@ -524,40 +528,53 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     private var q25ZeroHeld = false
     private var q25ZeroLong = false
-    private var voice: VoiceInput? = null
+    private var pendingVoice: String? = null
 
-    private fun voiceInput(): VoiceInput = voice ?: VoiceInput(
-        this,
-        onText = { text ->
-            currentInputConnection?.finishComposingText()
-            currentInputConnection?.commitText(text, 1)
-            dismissIndicator()
-        },
-        onEnd = { reason ->
-            dismissIndicator()
-            when (reason) {
-                "permit" -> askForMicrophone()
-                "unavailable" -> showIndicator("音声なし", 1500)
-            }
-        },
-    ).also { voice = it }
     private val zeroLongPress = Runnable {
         if (!q25ZeroHeld) return@Runnable
         q25ZeroLong = true
-        if (::controller.isInitialized && !controller.acceptsVoice) {
-            showIndicator("音声なし", 1200)
-            return@Runnable
-        }
-        if (voiceInput().start()) showIndicator("話して", 20000)
+        beginVoice()
     }
 
-    /** Q25 のスペース左の 0。短く押すと 0、押し続けると音声入力。変換中と修飾キー付きは対象にしない。 */
-    private fun isQ25Zero(event: KeyEvent): Boolean {
-        if (event.keyCode != KeyEvent.KEYCODE_0) return false
-        if (event.metaState and (KeyEvent.META_ALT_ON or KeyEvent.META_CTRL_ON or KeyEvent.META_META_ON) != 0) return false
-        if (::controller.isInitialized && controller.isComposing) return false
+    /** Q25 のスペース左の 0。名前が違っても、この端末の内蔵キーなら対象にする。 */
+    private fun isQ25Key(event: KeyEvent): Boolean {
         val name = event.device?.name ?: return false
-        return name.contains("Q25", ignoreCase = true)
+        if (name.contains("Q25", ignoreCase = true)) return true
+        return event.device?.isVirtual == false && Build.MODEL.contains("Q25", ignoreCase = true)
+    }
+
+    private fun isMicKey(event: KeyEvent): Boolean {
+        val code = event.keyCode
+        if (code != KeyEvent.KEYCODE_0 && code != KeyEvent.KEYCODE_NUMPAD_0 && code != KeyEvent.KEYCODE_VOICE_ASSIST) {
+            return false
+        }
+        if (event.metaState and (KeyEvent.META_ALT_ON or KeyEvent.META_CTRL_ON or KeyEvent.META_META_ON) != 0) return false
+        if (code != KeyEvent.KEYCODE_VOICE_ASSIST && ::controller.isInitialized && controller.isComposing) return false
+        return isQ25Key(event)
+    }
+
+    private fun beginVoice() {
+        if (::controller.isInitialized && !controller.acceptsVoice) {
+            showIndicator("音声なし", 1200)
+            return
+        }
+        VoiceBus.listener = { text ->
+            handler.post {
+                val connection = currentInputConnection
+                if (connection != null) {
+                    connection.finishComposingText()
+                    connection.commitText(text, 1)
+                } else {
+                    pendingVoice = text
+                }
+            }
+        }
+        try {
+            startActivity(Intent(this, MicPermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: RuntimeException) {
+            diag("voice activity failed: $e")
+            showIndicator("マイク", 1500)
+        }
     }
 
     private fun typeZero() {
@@ -572,14 +589,6 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             }
         }
         if (::controller.isInitialized) controller.keyUp(KeyEvent.KEYCODE_0)
-    }
-
-    private fun askForMicrophone() {
-        try {
-            startActivity(Intent(this, MicPermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (e: RuntimeException) {
-            showIndicator("マイク", 1500)
-        }
     }
 
     private fun cancelZeroHold() {
@@ -600,7 +609,16 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
             return true
         }
         if (isQ25Alt(event)) showSymbolLegend()
-        if (isQ25Zero(event)) {
+        if (event.repeatCount == 0 &&
+            (event.keyCode == KeyEvent.KEYCODE_0 || event.keyCode == KeyEvent.KEYCODE_VOICE_ASSIST)
+        ) {
+            diag("mic-key code=${event.keyCode} dev=${event.device?.name} model=${Build.MODEL}")
+        }
+        if (isMicKey(event)) {
+            if (event.keyCode == KeyEvent.KEYCODE_VOICE_ASSIST) {
+                if (event.repeatCount == 0) beginVoice()
+                return true
+            }
             if (event.repeatCount == 0) {
                 q25ZeroHeld = true
                 q25ZeroLong = false
@@ -620,7 +638,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_ALT_LEFT || event.keyCode == KeyEvent.KEYCODE_ALT_RIGHT) hideSymbolLegend()
-        if (q25ZeroHeld && event.keyCode == KeyEvent.KEYCODE_0) {
+        if (q25ZeroHeld && (event.keyCode == KeyEvent.KEYCODE_0 || event.keyCode == KeyEvent.KEYCODE_NUMPAD_0)) {
             handler.removeCallbacks(zeroLongPress)
             val wasLong = q25ZeroLong
             q25ZeroHeld = false
