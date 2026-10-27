@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Meltype</string>
-    <string name="ime_name">Meltype</string>
-    <string name="subtype_ja">日本語 (Meltype)</string>
+    <string name="app_name">meltype:neo</string>
+    <string name="ime_name">meltype:neo</string>
+    <string name="subtype_ja">日本語 (meltype:neo)</string>
 </resources>
