@@ -29,6 +29,33 @@ class MeltypePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_BRACKETS, true)
         set(value) = prefs.edit().putBoolean(KEY_BRACKETS, value).apply()
 
+    /** Fキー行を固定表示するか (変換が終わっても出し続ける)。即時書き込み (画面遷移でプロセスが落とされても消えないように)。 */
+    var fBarPinned: Boolean
+        get() = prefs.getBoolean(KEY_FBAR_PINNED, false)
+        set(value) {
+            prefs.edit().putBoolean(KEY_FBAR_PINNED, value).commit()
+        }
+
+    /** 変換中に Fキー行を自動で出すか。切ると、固定したときだけ出る。 */
+    var fBarAutoShow: Boolean
+        get() = prefs.getBoolean(KEY_FBAR_AUTO, true)
+        set(value) = prefs.edit().putBoolean(KEY_FBAR_AUTO, value).apply()
+
+    /** Fキー行の見た目。0=おまかせ (機種で自動)、1=ダーク、2=Q25ブルー。 */
+    var keycapStyle: Int
+        get() = prefs.getInt(KEY_KEYCAP_STYLE, 0)
+        set(value) = prefs.edit().putInt(KEY_KEYCAP_STYLE, value).apply()
+
+    /** 物理キーを打つたびに軽く振動させるか。 */
+    var keyVibrate: Boolean
+        get() = prefs.getBoolean(KEY_KEY_VIBRATE, true)
+        set(value) = prefs.edit().putBoolean(KEY_KEY_VIBRATE, value).apply()
+
+    /** 振動の強さ。0=弱い (25ms)、1=普通 (50ms)、2=強い (120ms)。 */
+    var vibeLevel: Int
+        get() = prefs.getInt(KEY_VIBE_LEVEL, 1)
+        set(value) = prefs.edit().putInt(KEY_VIBE_LEVEL, value).apply()
+
     /** 最近使った絵文字 (新しい順)。 */
     var recentEmoji: List<String>
         get() = EmojiData.parseRecent(prefs.getString(KEY_RECENT_EMOJI, null))
@@ -54,6 +81,11 @@ class MeltypePrefs(context: Context) {
         private const val KEY_THEME = "theme_mode"
         private const val KEY_BRACKETS = "cursor_between_brackets"
         private const val KEY_RECENT_EMOJI = "recent_emoji"
+        private const val KEY_FBAR_PINNED = "fbar_pinned"
+        private const val KEY_FBAR_AUTO = "fbar_auto_show"
+        private const val KEY_KEYCAP_STYLE = "keycap_style"
+        private const val KEY_KEY_VIBRATE = "key_vibrate"
+        private const val KEY_VIBE_LEVEL = "vibe_level"
         private const val KEY_GENRES = "enabled_genres"
 
         /** 本家の MELTYPE_DATA_DIR に渡す場所 (設定・学習・ユーザー辞書・ログ)。 */

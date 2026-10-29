@@ -17,6 +17,8 @@ import android.widget.TextView
 /**
  * 絵文字の一覧パネル。タブ (最近・カテゴリ) と、絵文字の格子。入力カーソルのすぐ下 (入らなければ上、位置が分からなければ画面の下) に出す。
  * キー: 矢印 (Q25 のトラックパッドも) で選び、Enter で入力、Tab / PageUp・PageDown でカテゴリを切り替え、Esc で閉じる。
+ * Q25 には Tab キーが無いので、タブの端でさらに左右に振ると隣のタブへ移るようにもしてある。
+ * 格子の一番上の行で上フリックするとタブ行に移り、左右でタブを選んで、下フリックか押し込みで格子に戻る。
  * タップでも選べる。ほかのキーを押すとパネルを閉じて、そのキーはそのまま入力に回る。
  */
 class EmojiPanel(
@@ -27,6 +29,9 @@ class EmojiPanel(
 ) {
     private var theme = CandidateTheme.LIGHT
     private var state: EmojiPanelState? = null
+
+    /** タブ行にフォーカスがあるか (格子の一番上から上フリックで移る)。 */
+    private var tabFocus = false
 
     private val tabRow = LinearLayout(service).apply { orientation = LinearLayout.HORIZONTAL }
     private val grid = GridLayout(service).apply { columnCount = EmojiPanelState.COLUMNS }
@@ -52,11 +57,13 @@ class EmojiPanel(
 
     fun show() {
         state = EmojiPanelState(recent())
+        tabFocus = false
         render()
     }
 
     fun hide() {
         state = null
+        tabFocus = false
         window.dismiss()
     }
 
@@ -70,20 +77,33 @@ class EmojiPanel(
     fun onKey(keyCode: Int, event: KeyEvent): Boolean {
         val s = state ?: return false
         when (keyCode) {
-            KeyEvent.KEYCODE_DPAD_LEFT -> s.moveLeft()
-            KeyEvent.KEYCODE_DPAD_RIGHT -> s.moveRight()
-            KeyEvent.KEYCODE_DPAD_UP -> s.moveUp()
-            KeyEvent.KEYCODE_DPAD_DOWN -> s.moveDown()
+            // タブの端でさらに振ると、隣のタブへ移る (Q25 には Tab キーが無いため)
+            KeyEvent.KEYCODE_DPAD_LEFT ->
+                if (tabFocus) s.previousTab() else if (s.index == 0) s.previousTab() else s.moveLeft()
+            KeyEvent.KEYCODE_DPAD_RIGHT ->
+                if (tabFocus) s.nextTab() else if (s.index >= s.items.size - 1) s.nextTab() else s.moveRight()
+            KeyEvent.KEYCODE_DPAD_UP ->
+                if (tabFocus) Unit else if (s.index < EmojiPanelState.COLUMNS) tabFocus = true else s.moveUp()
+            KeyEvent.KEYCODE_DPAD_DOWN ->
+                if (tabFocus) tabFocus = false else s.moveDown()
             KeyEvent.KEYCODE_TAB -> if (event.isShiftPressed) s.previousTab() else s.nextTab()
             KeyEvent.KEYCODE_PAGE_UP -> s.previousTab()
             KeyEvent.KEYCODE_PAGE_DOWN -> s.nextTab()
             KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_DPAD_CENTER -> {
-                s.current()?.let(::pick)
-                return true
+                if (tabFocus) {
+                    tabFocus = false
+                } else {
+                    s.current()?.let(::pick)
+                    return true
+                }
             }
             KeyEvent.KEYCODE_ESCAPE, KeyEvent.KEYCODE_BACK -> {
-                hide()
-                return true
+                if (tabFocus) {
+                    tabFocus = false
+                } else {
+                    hide()
+                    return true
+                }
             }
             // 修飾キーだけのときは、パネルを閉じない (Shift+Tab など)
             KeyEvent.KEYCODE_SHIFT_LEFT, KeyEvent.KEYCODE_SHIFT_RIGHT,
@@ -122,7 +142,7 @@ class EmojiPanel(
         grid.removeAllViews()
         s.items.forEachIndexed { index, emoji ->
             grid.addView(
-                cell(emoji, 24f, index == s.index).apply {
+                cell(emoji, 24f, !tabFocus && index == s.index).apply {
                     gravity = Gravity.CENTER
                     layoutParams = GridLayout.LayoutParams().apply {
                         width = dp(CELL_DP)

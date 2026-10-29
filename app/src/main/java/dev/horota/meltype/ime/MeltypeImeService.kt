@@ -10,6 +10,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.SystemClock
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.TypedValue
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -147,10 +149,18 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         override fun show(view: CompositionView, inlineReading: Boolean) {
             val ok = floating.show(view, inlineReading)
             diag("candidates show ok=$ok text='${view.text}' cands=${view.candidates.size} inline=$inlineReading anchor=${composingAnchor()}")
+            if (!fComposing) {
+                fComposing = true
+                syncFKeyBar()
+            }
         }
 
         override fun hide() {
             floating.hide()
+            if (fComposing) {
+                fComposing = false
+                syncFKeyBar()
+            }
         }
     }
 
@@ -382,10 +392,12 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
 
     /** 数字行から直接入れる。変換にも診断ログにも残さない。 */
     private fun insertDigit(text: String) {
+        vibrateVirtualKey()
         currentInputConnection?.commitText(text, 1)
     }
 
     private fun deleteDigitBeforeCursor() {
+        vibrateVirtualKey()
         currentInputConnection?.deleteSurroundingText(1, 0)
     }
 
@@ -393,21 +405,92 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
     private lateinit var digitPad: DigitPad
+    private lateinit var fKeyBar: FKeyBar
+
+    /** 入力ビューのルート (タッチ可能領域の指定用)。 */
+    private var inputViewRoot: View? = null
+
+    /** 未確定の文字があるか (Fキー行を自動で出す条件)。候補の表示と連動する。 */
+    private var fComposing = false
+
+    /** Fキー行が出ているときの入力ビューの上端 (窓内座標)。一度出たら入力終了まで保持し、アプリのレイアウトが変換のたびに上下しないようにする。-1 は未保持。 */
+    private var fBarHeldTop = -1
 
     /**
      * ふだんは 1px。数字欄のときだけ、画面の一番下に Q25 のキーと同じ数字行を出す。
+     * その上に Fキー行 (変換中だけ自動表示、固定も可)。
      * 候補はこれまでどおり浮かべる窓に出す。
      */
     override fun onCreateInputView(): View {
+        val container = android.widget.LinearLayout(this).apply { orientation = android.widget.LinearLayout.VERTICAL }
+        fKeyBar = FKeyBar(this, ::pressFunctionKey, ::toggleFBarPin)
+        fKeyBar.diag = { msg -> diag(msg) }
         digitPad = DigitPad(this, ::insertDigit, ::deleteDigitBeforeCursor)
+        container.addView(fKeyBar)
+        container.addView(digitPad)
+        inputViewRoot = container
         if (::controller.isInitialized) digitPad.setKind(controller.digitPadKind)
-        return digitPad
+        syncFKeyBar()
+        return container
     }
 
     /** 物理キーボードがあっても入力用の窓を出す。文字のパスワード欄では出さない。暗証番号は数字行のために出す。 */
     override fun onEvaluateInputViewShown(): Boolean {
         super.onEvaluateInputViewShown()
-        return !::controller.isInitialized || controller.showsWindow
+        return !::controller.isInitialized || controller.showsWindow || fBarWanted()
+    }
+
+    /** Fキー行を出したい状態か (固定中、または自動表示が有効で未確定の文字がある)。 */
+    private fun fBarWanted(): Boolean =
+        (::prefs.isInitialized && prefs.fBarPinned) || (fComposing && (!::prefs.isInitialized || prefs.fBarAutoShow))
+
+    /** Fキー行の見た目を設定と機種に合わせる (おまかせのときは Q25 なら青、それ以外はダーク)。 */
+    private fun applyKeycapStyle() {
+        if (!::fKeyBar.isInitialized || !::prefs.isInitialized) return
+        val preset = when (prefs.keycapStyle) {
+            1 -> KeycapStyle.PRESET_DARK
+            2 -> KeycapStyle.PRESET_Q25_BLUE
+            else -> if (android.os.Build.MODEL?.contains("Q25") == true) {
+                KeycapStyle.PRESET_Q25_BLUE
+            } else {
+                KeycapStyle.PRESET_DARK
+            }
+        }
+        if (KeycapStyle.apply(preset)) {
+            fKeyBar.restyle()
+            if (::digitPad.isInitialized) digitPad.restyle()
+        }
+    }
+
+    /** Fキー行の表示をいまの状態に合わせる (数字行と同じく、sync してから窓の表示を更新する)。 */
+    private fun syncFKeyBar() {
+        if (!::fKeyBar.isInitialized || !::prefs.isInitialized) return
+        applyKeycapStyle()
+        val want = fBarWanted()
+        diag("fbar sync want=$want pinned=${prefs.fBarPinned} composing=$fComposing barActive=${fKeyBar.isActive} inputShown=$isInputViewShown barSize=${fKeyBar.width}x${fKeyBar.height}")
+        fKeyBar.setActive(want, prefs.fBarPinned)
+        try {
+            updateInputViewShown()
+        } catch (e: RuntimeException) {
+            diag("updateInputViewShown (fbar) failed: $e")
+        }
+    }
+
+    /** 画面の Fキーを、物理キーと同じ入口から流す。 */
+    private fun pressFunctionKey(keyCode: Int) {
+        vibrateVirtualKey()
+        val now = android.os.SystemClock.uptimeMillis()
+        onKeyDown(keyCode, KeyEvent(now, now, KeyEvent.ACTION_DOWN, keyCode, 0))
+        onKeyUp(keyCode, KeyEvent(now, now, KeyEvent.ACTION_UP, keyCode, 0))
+    }
+
+    /** Fキー行の固定を切り替える (設定に残す)。 */
+    private fun toggleFBarPin() {
+        if (!::prefs.isInitialized) return
+        vibrateVirtualKey()
+        prefs.fBarPinned = !prefs.fBarPinned
+        diag("fbar pin -> ${prefs.fBarPinned}")
+        syncFKeyBar()
     }
 
     override fun onEvaluateFullscreenMode(): Boolean = false
@@ -424,18 +507,46 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         overlayDialog = null
     }
 
-    /** 数字行が出ているときはその高さだけ画面を空ける。それ以外はアプリを押し上げない。 */
+    /**
+     * 数字行が出ているときはその高さだけ画面を空ける。それ以外はアプリを押し上げない。
+     * あわせて、入力ビューが表示されている間はその実範囲をタッチ可能領域として明示する。
+     * Q25 (LineageOS) では、物理キーボード前提で強制表示した入力窓だと、バーが描画されても
+     * タッチが入力ビューまで届かない (キーの押下反応がない) ため。非表示時には指定しない
+     * (見えていない領域がアプリのタッチを奪わないように)。
+     */
     override fun onComputeInsets(outInsets: Insets) {
         super.onComputeInsets(outInsets)
+        val root = inputViewRoot
+        var rootTop = -1
+        if (root != null && root.width > 0 && root.height > 0) {
+            val loc = IntArray(2)
+            root.getLocationInWindow(loc)
+            rootTop = loc[1]
+            if (isInputViewShown) {
+                outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+                outInsets.touchableRegion.set(loc[0], loc[1], loc[0] + root.width, loc[1] + root.height)
+            }
+        }
         if (::digitPad.isInitialized && digitPad.isActive) return
         val bottom = window.window?.decorView?.height ?: return
         if (bottom <= 0) return
-        outInsets.contentTopInsets = bottom
-        outInsets.visibleTopInsets = bottom
+        // Fキー行が出ている間は、その上端をアプリに伝える (対応アプリは入力欄を持ち上げる)。
+        // 変換のたびにアプリが上下しないよう、出たときの上端を入力終了まで保持する。
+        val barActiveNow = ::fKeyBar.isInitialized && fKeyBar.isActive
+        if (barActiveNow && rootTop >= 0) fBarHeldTop = rootTop
+        val effectiveTop = if (barActiveNow) rootTop else fBarHeldTop
+        if (effectiveTop >= 0) {
+            outInsets.contentTopInsets = effectiveTop
+            outInsets.visibleTopInsets = effectiveTop
+        } else {
+            outInsets.contentTopInsets = bottom
+            outInsets.visibleTopInsets = bottom
+        }
     }
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        vibeLogged = false
         diag("onStartInput pkg=${attribute.packageName} inputView=$isInputViewShown")
         if (!isInputViewShown && !attribute.packageName.isNullOrEmpty()) {
             try {
@@ -451,6 +562,7 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         currentInputConnection?.requestCursorUpdates(InputConnection.CURSOR_UPDATE_MONITOR)
         controller.startInput(EditorPolicy.of(attribute.inputType, attribute.packageName, prefs.codeApps, attribute.imeOptions))
         syncDigitPad()
+        syncFKeyBar()
         updateInputViewShown()
         startupNotice?.let {
             startupNotice = null
@@ -466,6 +578,12 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         cancelZeroHold()
         hideSymbolLegend()
         if (::digitPad.isInitialized) digitPad.hide()
+        fComposing = false
+        fBarHeldTop = -1
+        if (::fKeyBar.isInitialized && ::prefs.isInitialized) {
+            diag("fbar finishInput pinned=${prefs.fBarPinned} barActive=${fKeyBar.isActive}")
+            fKeyBar.setActive(prefs.fBarPinned, prefs.fBarPinned)
+        }
         hideStatusIcon()
         emojiPanel.hide()
         floating.hide()
@@ -500,10 +618,20 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         super.onDestroy()
     }
 
-    private val symbolLegend by lazy { SymbolLegend(this) }
+    private val symbolLegend by lazy {
+        SymbolLegend(this).also { legend ->
+            legend.onSymbol = { letter, symbol -> onSymbolTap(letter, symbol) }
+        }
+    }
     private val symbolWindow by lazy { ImeDialog({ this }, symbolLegend, touchable = false) }
 
+    /** 記号面をタップで押せるようにするための、候補窓と同じ持ち方の実ダイアログ。 */
+    private var symbolDialog: android.app.Dialog? = null
+    private var symbolOwnShown = false
+
     private fun showSymbolLegend() {
+        applyKeycapStyle()
+        symbolLegend.restyle()
         val metrics = resources.displayMetrics
         symbolLegend.measure(
             View.MeasureSpec.makeMeasureSpec(metrics.widthPixels, View.MeasureSpec.EXACTLY),
@@ -519,11 +647,84 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
                 diag("requestShowSelf failed: $e")
             }
         }
+        if (showSymbolOwn(0, y, w, h)) return
+        dismissSymbolOwn()
+        (symbolLegend.parent as? android.view.ViewGroup)?.removeView(symbolLegend)
         symbolWindow.show(0, y, w, h)
     }
 
+    private fun showSymbolOwn(x: Int, y: Int, w: Int, h: Int): Boolean {
+        val token = try {
+            window?.window?.decorView?.windowToken
+        } catch (e: RuntimeException) {
+            null
+        } ?: return false
+        return try {
+            symbolWindow.dismiss()
+            (symbolLegend.parent as? android.view.ViewGroup)?.removeView(symbolLegend)
+            val d = symbolDialog ?: android.app.Dialog(this).also {
+                it.requestWindowFeature(android.view.Window.FEATURE_NO_TITLE)
+                symbolDialog = it
+            }
+            d.setContentView(symbolLegend)
+            val win = d.window ?: return false
+            val params = win.attributes
+            params.type = android.view.WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_DIALOG
+            params.token = token
+            params.gravity = android.view.Gravity.TOP or android.view.Gravity.START
+            params.x = x
+            params.y = y
+            params.width = w
+            params.height = h
+            params.dimAmount = 0f
+            win.attributes = params
+            win.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(android.graphics.Color.TRANSPARENT))
+            win.clearFlags(android.view.WindowManager.LayoutParams.FLAG_DIM_BEHIND)
+            win.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                    android.view.WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                    android.view.WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            )
+            if (!d.isShowing) d.show()
+            symbolOwnShown = true
+            true
+        } catch (e: Throwable) {
+            false
+        }
+    }
+
+    private fun dismissSymbolOwn() {
+        if (!symbolOwnShown && symbolDialog?.isShowing != true) return
+        try {
+            symbolDialog?.dismiss()
+        } catch (e: RuntimeException) {
+            // 窓がもう無いときは何もしない
+        }
+        symbolOwnShown = false
+    }
+
     private fun hideSymbolLegend() {
+        dismissSymbolOwn()
         symbolWindow.dismiss()
+    }
+
+    /** 記号面のタップを、物理の Alt+キーと同じ形 (KeyInput) で本体へ流す。 */
+    private fun onSymbolTap(letter: String, symbol: String) {
+        if (!::controller.isInitialized || letter.isEmpty() || symbol.isEmpty()) return
+        vibrateVirtualKey()
+        val keyCode = KeyEvent.KEYCODE_A + (letter.first() - 'a')
+        val key = KeyInput(keyCode, symbol.first().code, letter.first().code, KeyEvent.META_ALT_ON)
+        val handled = controller.keyDown(key)
+        controller.keyUp(keyCode)
+        diag("sym tap $letter -> $symbol handled=$handled")
+        if (handled && !isInputViewShown) {
+            try {
+                requestShowSelf(SHOW_EXPLICIT)
+            } catch (e: RuntimeException) {
+                diag("requestShowSelf failed: $e")
+            }
+        }
     }
 
     private var zeroStartedAt = 0L
@@ -712,7 +913,32 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         return name.contains("Q25", ignoreCase = true)
     }
 
+    /** 診断用: 直前の onKeyDown の時刻 (キー同士の間隔を見る)。 */
+    private var lastKeyDownAtMs = 0L
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val nowMs = android.os.SystemClock.uptimeMillis()
+        val dtMs = if (lastKeyDownAtMs == 0L) -1L else nowMs - lastKeyDownAtMs
+        lastKeyDownAtMs = nowMs
+        val handled = onKeyDownInner(keyCode, event)
+        if (isNavKey(keyCode)) {
+            // 診断 (パッド入力の切り分け用。あとで外す): どのデバイスから来て、処理されたか
+            diag(
+                "key nav code=${KeyEvent.keyCodeToString(keyCode)} scan=${event.scanCode} " +
+                    "dev=${event.device?.name} devId=${event.deviceId} src=${event.source} " +
+                    "rep=${event.repeatCount} dt=${dtMs}ms handled=$handled",
+            )
+        }
+        return handled
+    }
+
+    private fun isNavKey(keyCode: Int): Boolean =
+        keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_DPAD_DOWN ||
+            keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_DPAD_RIGHT ||
+            keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER ||
+            keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+
+    private fun onKeyDownInner(keyCode: Int, event: KeyEvent): Boolean {
         if (emojiPanel.isShowing && emojiPanel.onKey(keyCode, event)) {
             panelConsumed += keyCode
             return true
@@ -733,11 +959,48 @@ class MeltypeImeService : InputMethodService(), OverlayOwner {
         }
         val key = KeyInput(keyCode, event.getUnicodeChar(event.metaState), event.getUnicodeChar(0), event.metaState)
         if (controller.keyDown(key)) {
+            // 物理キーの打鍵にだけ、気持ち振動を返す (画面キーの合成イベントは除く)。
+            if (::prefs.isInitialized && prefs.keyVibrate && event.repeatCount == 0 && event.deviceId >= 0) {
+                vibrateKey()
+            }
             // 入力欄をタップせずに打ち始めたときは、まだ窓が出ていない
             if (!isInputViewShown) requestShowSelf(SHOW_EXPLICIT)
             return true
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    /** 画面のキー (F キー行・数字行・記号面・候補窓のボタン) 用。物理キーと同じ設定で鳴らす。 */
+    fun vibrateVirtualKey() {
+        if (::prefs.isInitialized && prefs.keyVibrate) vibrateKey()
+    }
+
+    /** 振動の試行を入力ごとに1回だけ記録したか (効かないときの切り分け用)。 */
+    private var vibeLogged = false
+
+    /** 打鍵の振動。安いモーターでも感じられるよう、短いが強めに。できない環境では何もしない。 */
+    private fun vibrateKey() {
+        try {
+            val vibrator = getSystemService(Vibrator::class.java) ?: return
+            if (!vibeLogged) {
+                vibeLogged = true
+                diag("vibe attempt hasVibrator=${vibrator.hasVibrator()}")
+            }
+            if (!vibrator.hasVibrator()) return
+            // 安いモーターは短いと回り切らないので、長さで強さを調整する (最大振幅)。
+            // 打ち続けると次の振動に置き換わるので、速く打つと細かく、ゆっくり打つと1打ずつ残る。
+            val ms = when (if (::prefs.isInitialized) prefs.vibeLevel else 1) {
+                0 -> 25L
+                2 -> 120L
+                else -> 50L
+            }
+            vibrator.vibrate(VibrationEffect.createOneShot(ms, VibrationEffect.DEFAULT_AMPLITUDE))
+        } catch (e: RuntimeException) {
+            if (!vibeLogged) {
+                vibeLogged = true
+                diag("vibe failed: $e")
+            }
+        }
     }
 
     override fun onKeyUp(keyCode: Int, event: KeyEvent): Boolean {
